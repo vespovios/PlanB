@@ -429,18 +429,26 @@ select:focus,
 }
 .logo {
   display: block;
-  color: #1f2a44;
+  height: auto;
+  border-radius: 3px;
 }
 .logo-sm {
-  width: 92px;
-  height: 37px;
+  width: 104px;
 }
 .logo-md {
-  width: 140px;
+  width: 160px;
 }
 .logo-lg {
-  width: 220px;
-  margin: 0 auto 6px;
+  width: min(300px, 100%);
+  margin: 0 auto 14px;
+}
+.checklist-head .logo {
+  margin-bottom: 14px;
+}
+@media print {
+  .checklist-head .logo {
+    width: 40mm;
+  }
 }
 
 .save-status {

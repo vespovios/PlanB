@@ -1,3 +1,5 @@
+<p align="center"><img src="branding/planb-logo-strip.png" alt="PlanB" width="420"></p>
+
 # PlanB
 
 PlanB is a small, private, editor-independent episode planner for individual YouTube creators. It turns an episode idea into timed scenes, shot checklists and a practical filming plan. The creator and their own external agent edit the same saved project.
@@ -70,6 +72,7 @@ src/server/   Fastify app, auth, episodes/revisions, assets, export, MCP adapter
 src/client/   React app: planner (timeline, cards, scene details, shots, references), storyboard editor, checklist
 tests/        Vitest (server, MCP, persistence) and Playwright (tests/e2e)
 deploy/       Caddyfile
+branding/     source logo (PLANB-LOGO.png) and README strip; scripts/brand-assets.mjs regenerates the web logo and icons
 docs/         user and operator documentation
 PlanB-Handoff/  the original v0.3 brief (unchanged)
 ```

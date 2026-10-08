@@ -209,25 +209,8 @@ export function Segmented<T extends string>(props: { value: T; options: { value:
 }
 
 export function Logo({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  // Wordmark between filmstrip bands with outward chevrons, after Peter's sketch.
-  const holes = (y: number) => Array.from({ length: 9 }, (_, i) => <rect key={i} x={30 + i * 11.5} y={y} width="6" height="4" rx="1" />);
-  return (
-    <svg className={`logo logo-${size}`} viewBox="0 0 160 64" role="img" aria-label="PlanB">
-      <g fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 20 6 32l14 12" />
-        <path d="M140 20l14 12-14 12" />
-        <rect x="26" y="4" width="108" height="10" rx="1.5" />
-        <rect x="26" y="50" width="108" height="10" rx="1.5" />
-      </g>
-      <g fill="currentColor">
-        {holes(7)}
-        {holes(53)}
-      </g>
-      <text x="80" y="41" textAnchor="middle" fontFamily="ui-rounded, 'SF Pro Rounded', system-ui, sans-serif" fontWeight="700" fontSize="24" fill="currentColor">
-        PlanB
-      </text>
-    </svg>
-  );
+  // Filmstrip wordmark generated from branding/PLANB-LOGO.png (scripts/brand-assets.mjs).
+  return <img className={`logo logo-${size}`} src="/brand/planb-logo.webp" alt="PlanB" width={960} height={323} decoding="async" />;
 }
 
 export function Toast(props: { children: ReactNode; onClose: () => void; timeout?: number; action?: { label: string; onClick: () => void } }) {

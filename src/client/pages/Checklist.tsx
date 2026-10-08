@@ -4,6 +4,7 @@ import { capturedCount, formatTime, totalSeconds } from '../../shared/model';
 import { assetUrl } from '../api';
 import { useEpisodeSync } from '../sync';
 import { TopBar } from '../components/TopBar';
+import { Logo } from '../components/ui';
 import { href } from '../router';
 import { SaveStatus } from './Planner';
 
@@ -37,6 +38,7 @@ export function ChecklistPage({ id }: { id: string }) {
       </TopBar>
       <main className="checklist">
         <header className="checklist-head">
+          <Logo size="md" />
           <p className="eyebrow">Filming checklist</p>
           <h1>{episode.title}</h1>
           <p className="muted">
