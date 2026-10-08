@@ -1,0 +1,35 @@
+# Production-style deployment: PlanB behind Caddy (automatic HTTPS).
+# Usage: cp .env.example .env && edit; docker compose up -d --build
+services:
+  planb:
+    build: .
+    image: planb:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PLANB_PUBLIC_URL: https://${PLANB_DOMAIN}
+      PLANB_SECURE_COOKIES: "true"
+      PLANB_TRUST_PROXY: "true"
+    volumes:
+      - ./data:/data          # database + assets: back these up together
+      - ./backups:/backups    # destination for `backup` command
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [planb]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PLANB_DOMAIN: ${PLANB_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

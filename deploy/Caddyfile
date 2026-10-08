@@ -1,0 +1,15 @@
+# Caddy obtains and renews the HTTPS certificate for PLANB_DOMAIN automatically.
+{$PLANB_DOMAIN} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+	}
+	# Image uploads (10 MiB) arrive as multipart; MCP uploads arrive base64-encoded.
+	request_body {
+		max_size 20MB
+	}
+	reverse_proxy planb:8787 {
+		# Server-sent events (live updates) must not be buffered.
+		flush_interval -1
+	}
+}

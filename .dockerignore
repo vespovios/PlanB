@@ -1,0 +1,12 @@
+node_modules
+dist
+data
+backups
+.enjoy-logs
+.git
+test-results
+playwright-report
+PlanB-Handoff
+*.log
+.env
+.docker-smoke
