@@ -433,7 +433,12 @@ select:focus,
   border-radius: 3px;
 }
 .logo-sm {
-  width: 104px;
+  width: 156px;
+}
+@media (max-width: 760px) {
+  .logo-sm {
+    width: 128px;
+  }
 }
 .logo-md {
   width: 160px;
