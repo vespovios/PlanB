@@ -26,6 +26,7 @@ export const SceneId = z.string().regex(idPattern('sc'), 'Scene IDs look like sc
 export const ShotId = z.string().regex(idPattern('sh'), 'Shot IDs look like sh_xxxxxxxx');
 export const AttachmentId = z.string().regex(idPattern('at'), 'Attachment IDs look like at_xxxxxxxx');
 export const AssetId = z.string().regex(idPattern('as'), 'Asset IDs look like as_xxxxxxxx');
+export const GearId = z.string().regex(idPattern('ge'), 'Gear IDs look like ge_xxxxxxxx');
 
 const text = (max: number = LIMITS.longText) => z.string().max(max);
 export const Duration = z
@@ -41,6 +42,17 @@ export const ShotAngleEnum = z.enum(keysOf(SHOT_ANGLES));
 export const ShotMovementEnum = z.enum(keysOf(SHOT_MOVEMENTS));
 export const CutTypeEnum = z.enum(keysOf(CUT_TYPES));
 
+/** Kit the creator is taking: cameras, lenses, supports, audio, light, power… */
+export const GEAR_KINDS = ['camera', 'lens', 'support', 'audio', 'light', 'power', 'storage', 'other'] as const;
+export const GearKind = z.enum(GEAR_KINDS);
+export const GearItemSchema = z.object({
+  id: GearId,
+  name: text(80).trim().min(1, 'Gear needs a name'),
+  kind: GearKind.default('other'),
+  notes: text(LIMITS.shortText).default(''),
+});
+export type GearItem = z.infer<typeof GearItemSchema>;
+
 export const ShotSchema = z.object({
   id: ShotId,
   description: text(LIMITS.shortText * 4).min(1, 'A shot needs a short description'),
@@ -50,6 +62,8 @@ export const ShotSchema = z.object({
   angle: ShotAngleEnum.nullable().default(null),
   movement: ShotMovementEnum.nullable().default(null),
   cameraNotes: text().default(''),
+  /** Gear from the episode's kit list used for this shot (camera, support, mic…). */
+  gear: z.array(GearId).max(12).default([]),
   priority: ShotPriority.default('essential'),
   captured: z.boolean().default(false),
 });
@@ -119,6 +133,8 @@ export const EpisodeDocSchema = z.object({
   notes: text(LIMITS.longText * 5).default(''),
   targetSeconds: Duration.nullable().default(null),
   status: PlanningStatus.default('draft'),
+  /** Kit list for this episode; shots refer to items by ID. */
+  gear: z.array(GearItemSchema).max(100).default([]),
   scenes: z.array(SceneSchema).max(LIMITS.maxScenes).default([]),
 });
 export type EpisodeDoc = z.infer<typeof EpisodeDocSchema>;
@@ -158,8 +174,14 @@ export function referentialProblems(doc: EpisodeDoc): string[] {
     if (seen.has(id)) problems.push(`Duplicate ID ${id}`);
     seen.add(id);
   };
+  const gearIds = new Set((doc.gear ?? []).map((g) => g.id));
+  for (const g of doc.gear ?? []) dup(g.id);
   for (const scene of doc.scenes) {
     dup(scene.id);
+    for (const shot of scene.shots) {
+      const missing = (shot.gear ?? []).filter((id) => !gearIds.has(id));
+      if (missing.length) problems.push(`A shot in "${scene.title}" uses gear ${missing.join(', ')} that is not in the kit list. Add it to the kit list first.`);
+    }
     scene.shots.forEach((s) => dup(s.id));
     scene.attachments.forEach((a) => dup(a.id));
     const images = new Map(scene.attachments.filter((a) => a.kind === 'image').map((a) => [a.id, a]));

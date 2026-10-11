@@ -3,6 +3,7 @@ import { formatTime, parseTime, type Episode } from '../../shared/model';
 import { STORY_STARTER } from '../../shared/ops';
 import type { EpisodeSync } from '../sync';
 import { Disclosure, TextField } from '../components/ui';
+import { KitList } from './KitList';
 
 const TEXT_DEBOUNCE = 700;
 
@@ -63,6 +64,9 @@ export function EpisodeBrief({ episode, engine }: { episode: Episode; engine: Ep
             Insert starter: Setup · Desire · Conflict · Change · Result
           </button>
         )}
+      </Disclosure>
+      <Disclosure label="Kit list" filled={(episode.gear ?? []).length > 0} count={(episode.gear ?? []).length} hint="Cameras, mounts, mics and power you are taking">
+        <KitList episode={episode} engine={engine} />
       </Disclosure>
       <Disclosure label="Loose notes" filled={!!episode.notes} hint="Ideas, observations from filming, open questions">
         <TextField

@@ -212,7 +212,7 @@ export function PlannerPage({ id }: { id: string }) {
                     />
                   </div>
                   <div className="panel right">
-                    <ShotsPanel scene={selected} engine={engine} />
+                    <ShotsPanel scene={selected} engine={engine} gear={episode.gear ?? []} />
                   </div>
                 </>
               ) : (
@@ -299,7 +299,7 @@ export function PlannerPage({ id }: { id: string }) {
               onMove={(i) => moveScene(selected.id, i)}
             />
             <hr />
-            <ShotsPanel scene={selected} engine={engine} />
+            <ShotsPanel scene={selected} engine={engine} gear={episode.gear ?? []} />
           </div>
         </div>
       )}

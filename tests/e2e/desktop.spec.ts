@@ -335,8 +335,22 @@ test('production pack: cover, shot list with specs, storyboard, breakdown and gu
   await page.getByRole('button', { name: '+ Story outline' }).click();
   await page.getByLabel('Story outline').fill('Setup: two riders pack (S01–S02)\nDesire: reach the mountains\nConflict: a long road (S03)\nChange: coffee stop (S04)\nResult: open');
   await waitSaved(page);
+  // Kit list: add two items, assign the camera to the first shot.
+  await page.getByRole('button', { name: '+ Kit list' }).click();
+  await page.getByLabel('New gear name').fill('Action camera');
+  await page.getByRole('button', { name: '+ Gear' }).click();
+  await page.getByLabel('New gear name').fill('Wireless mic');
+  await page.getByLabel('New gear kind').selectOption('audio');
+  await page.getByRole('button', { name: '+ Gear' }).click();
+  await expect(page.locator('.kit-item')).toHaveCount(2);
+  await page.locator('.shot-gear').first().getByLabel('Add gear to shot').selectOption({ label: 'Action camera (Camera)' });
+  await expect(page.locator('.shot-gear').first().locator('.gear-chip')).toHaveText(['Action camera ✕']);
+  await waitSaved(page);
   await page.getByRole('link', { name: 'Plan document' }).click();
   await expect(page.locator('.pk-cover h1')).toHaveText('Printable plan');
+  await expect(page.locator('.pk-kit-table tr')).toHaveCount(2);
+  await expect(page.locator('.pk-kit-table').first()).toContainText('Used in 1A');
+  await expect(page.locator('.pk-shots tbody tr').first()).toContainText('Action camera');
   await expect(page.locator('.pk-five li')).toHaveCount(5);
   await expect(page.locator('.pk-five li').first()).toContainText('two riders pack');
   await expect(page.locator('.pk-five li').first().locator('.pk-scene-chip')).toHaveText(['S01', 'S02']);

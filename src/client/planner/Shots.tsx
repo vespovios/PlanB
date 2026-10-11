@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { randomId } from '../../shared/ids';
-import { capturedCount, type Scene, type Shot } from '../../shared/model';
+import { capturedCount, type GearItem, type Scene, type Shot } from '../../shared/model';
 import type { EpisodeSync } from '../sync';
 import { Disclosure, TextField } from '../components/ui';
 import { ShotSizeIcon } from '../components/ShotIcons';
+import { ShotGear } from './KitList';
 import { SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, type Term } from '../../shared/vocab';
 
 /** Compact select for one vocabulary list; empty means "not specified". */
@@ -22,7 +23,7 @@ function SpecSelect({ list, value, label, onChange }: { list: readonly Term[]; v
 
 const TEXT_DEBOUNCE = 700;
 
-export function ShotsPanel({ scene, engine }: { scene: Scene; engine: EpisodeSync }) {
+export function ShotsPanel({ scene, engine, gear = [] }: { scene: Scene; engine: EpisodeSync; gear?: GearItem[] }) {
   const [draft, setDraft] = useState('');
   const { captured, total } = capturedCount(scene);
   const add = () => {
@@ -43,7 +44,7 @@ export function ShotsPanel({ scene, engine }: { scene: Scene; engine: EpisodeSyn
       {total === 0 && <p className="muted small">No shots yet. Start with the one to three shots this scene really needs.</p>}
       <ol className="shot-list">
         {scene.shots.map((shot, i) => (
-          <ShotRow key={shot.id} shot={shot} index={i} count={total} scene={scene} engine={engine} />
+          <ShotRow key={shot.id} shot={shot} index={i} count={total} scene={scene} engine={engine} gear={gear} />
         ))}
       </ol>
       <form
@@ -85,7 +86,7 @@ export function ShotsPanel({ scene, engine }: { scene: Scene; engine: EpisodeSyn
   );
 }
 
-function ShotRow({ shot, index, count, scene, engine }: { shot: Shot; index: number; count: number; scene: Scene; engine: EpisodeSync }) {
+function ShotRow({ shot, index, count, scene, engine, gear }: { shot: Shot; index: number; count: number; scene: Scene; engine: EpisodeSync; gear: GearItem[] }) {
   const [notesOpen, setNotesOpen] = useState(!!shot.cameraNotes);
   const update = (fields: Partial<Shot>, debounce = 0) =>
     engine.queue({ op: 'updateShot', sceneId: scene.id, shotId: shot.id, fields }, debounce);
@@ -121,6 +122,7 @@ function ShotRow({ shot, index, count, scene, engine }: { shot: Shot; index: num
           <SpecSelect list={SHOT_ANGLES} label="Angle" value={shot.angle} onChange={(v) => update({ angle: v as Shot['angle'] })} />
           <SpecSelect list={SHOT_MOVEMENTS} label="Move" value={shot.movement} onChange={(v) => update({ movement: v as Shot['movement'] })} />
         </div>
+        <ShotGear gear={gear} value={shot.gear ?? []} onChange={(ids) => update({ gear: ids })} />
         <TextField
           multiline
           rows={1}

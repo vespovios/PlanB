@@ -2861,3 +2861,150 @@ p.pk-kit {
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
 }
+
+/* kit list + shot gear */
+.kit-items {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.kit-item {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.3fr) 150px minmax(120px, 1fr) 64px 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.kit-item .field {
+  margin: 0;
+}
+.kit-item .field input,
+.kit-item select {
+  min-height: 36px;
+  padding: 6px 10px;
+}
+.kit-usage {
+  text-align: right;
+  white-space: nowrap;
+}
+.kit-add {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+}
+.kit-add input {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.kit-add select {
+  width: 160px;
+  min-height: 40px;
+}
+.kit-copy select {
+  width: auto;
+  min-height: 34px;
+  padding: 4px 10px;
+}
+.shot-gear {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 6px 6px;
+}
+.gear-chip {
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 1px solid #c8d3ea;
+  border-radius: 99px;
+  background: #eef3fc;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.gear-chip.kind-audio {
+  background: #eef8f1;
+  border-color: #c4e3cf;
+}
+.gear-chip.kind-support {
+  background: #fbf3e6;
+  border-color: #ecd6b2;
+}
+@media (max-width: 760px) {
+  .kit-item {
+    grid-template-columns: 1fr 120px 34px;
+  }
+  .kit-item .kit-notes,
+  .kit-item .kit-usage {
+    display: none;
+  }
+  .kit-add {
+    flex-wrap: wrap;
+  }
+  .kit-add select {
+    width: auto;
+    flex: 1;
+  }
+}
+
+/* kit & packing list (production pack) */
+.pk-kit-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 26px;
+}
+.pk-kit-group {
+  break-inside: avoid;
+}
+.pk-kit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.pk-kit-table td {
+  padding: 5px 6px 5px 0;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+.pk-kit-table .col-check {
+  width: 26px;
+}
+.pk-kit-used {
+  width: 40%;
+  font-size: 0.74rem;
+  color: #4a5263;
+}
+.pk-kit-extra ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 2;
+  font-size: 0.85rem;
+}
+.pk-kit-extra li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  break-inside: avoid;
+}
+.pk-shots .col-gear {
+  width: 120px;
+}
+.pk-gear-tag {
+  display: inline-block;
+  margin: 0 3px 3px 0;
+  padding: 0 6px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .pk-kit-groups {
+    grid-template-columns: 1fr;
+  }
+}

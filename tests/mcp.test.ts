@@ -89,6 +89,17 @@ describe('MCP adapter', () => {
     expect(ep.scenes[1]).toMatchObject({ purpose: 'Introduce the riders', voiceover: 'VO: we finally go', audio: 'Ratchet straps' });
     expect(ep.scenes[1].shots).toHaveLength(4);
 
+    // The agent view includes the kit list, so agents can reference gear IDs.
+    const kit = parse(
+      await client.callTool({
+        name: 'apply_changes',
+        arguments: { episodeId: id, baseRevision: res.revision, operations: [{ op: 'addGear', id: 'ge_mcpcamera01', item: { name: 'Action camera', kind: 'camera' } }] },
+      }),
+    );
+    const viewed = parse(await client.callTool({ name: 'get_episode', arguments: { episodeId: id } }));
+    expect(viewed.gear).toEqual([{ id: 'ge_mcpcamera01', name: 'Action camera', kind: 'camera', notes: '' }]);
+    ep = kit.episode;
+
     // Drawing through the same validated operation.
     const schema = parse(await client.callTool({ name: 'get_storyboard_schema', arguments: {} }));
     const drawn = parse(

@@ -148,6 +148,26 @@ describe('planning (acceptance 1–3, 10, 11, 13)', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('kit list: add gear, assign to shots, reject unknown gear, removal strips shots', async () => {
+    let ep = await createExample(asUser(ctx.cookieA));
+    const sc = ep.scenes[0];
+    let res = await change(asAgent(ctx.tokenA), ep, [
+      { op: 'addGear', id: 'ge_camera00001', item: { name: 'Action camera', kind: 'camera', notes: '3 batteries' } },
+      { op: 'addGear', id: 'ge_tripod00001', item: { name: 'Mini tripod', kind: 'support' } },
+      { op: 'updateShot', sceneId: sc.id, shotId: sc.shots[0].id, fields: { gear: ['ge_camera00001', 'ge_tripod00001'] } },
+    ]);
+    expect(res.statusCode).toBe(200);
+    ep = res.json().episode;
+    expect(ep.gear.map((g: { name: string }) => g.name)).toEqual(['Action camera', 'Mini tripod']);
+    expect(ep.scenes[0].shots[0].gear).toEqual(['ge_camera00001', 'ge_tripod00001']);
+    const unknown = await change(asAgent(ctx.tokenA), ep, [{ op: 'updateShot', sceneId: sc.id, shotId: sc.shots[1].id, fields: { gear: ['ge_drone000001'] } }]);
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json().error).toMatch(/not in the kit list/);
+    res = await change(asUser(ctx.cookieA), ep, [{ op: 'removeGear', gearId: 'ge_tripod00001' }]);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().episode.scenes[0].shots[0].gear).toEqual(['ge_camera00001']);
+  });
+
   it('deleted scenes can be restored with their shots', async () => {
     let ep = await createExample(asUser(ctx.cookieA));
     const victim = ep.scenes[2];

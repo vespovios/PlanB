@@ -26,6 +26,7 @@ All paths inside the bundle are relative to the file that contains them. Externa
     "title": "…", "brief": "…", "outline": "…", "notes": "…",
     "status": "draft|ready", "targetSeconds": 600, "totalSeconds": 180
   },
+  "gear": [{ "id": "ge_…", "name": "Action camera", "kind": "camera", "notes": "2 batteries" }],
   "scenes": [
     {
       "id": "sc_…", "number": "S01", "order": 0,
@@ -34,7 +35,7 @@ All paths inside the bundle are relative to the file that contains them. Externa
       "thumbnailAttachmentId": "at_…|null",
       "cutToNext": "jcut|match|…|null",
       "capturedShots": 1, "totalShots": 3,
-      "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "size": "ws|null", "angle": "low|null", "movement": "track|null", "cameraNotes": "…",
+      "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "size": "ws|null", "angle": "low|null", "movement": "track|null", "gear": ["ge_…"], "cameraNotes": "…",
                   "priority": "essential|optional", "captured": false }],
       "attachments": [
         { "id": "at_…", "kind": "image", "label": "…", "caption": "…", "assetId": "as_…",

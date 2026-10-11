@@ -136,6 +136,11 @@ export function ChecklistPage({ id }: { id: string }) {
                             {shot.framing && <strong>{shot.framing}: </strong>}
                             {shot.description}
                             {shot.cameraNotes && <span className="muted as-block small">{shot.cameraNotes}</span>}
+                            {(shot.gear ?? []).length > 0 && (
+                              <span className="muted as-block small">
+                                🎒 {(shot.gear ?? []).map((id) => (episode.gear ?? []).find((g) => g.id === id)?.name).filter(Boolean).join(' · ')}
+                              </span>
+                            )}
                           </span>
                           <span className={`priority-tag ${shot.priority}`}>{shot.priority === 'essential' ? 'Essential' : 'Optional'}</span>
                         </label>

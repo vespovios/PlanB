@@ -7,6 +7,9 @@ import {
   CutTypeEnum,
   Duration,
   EpisodeDocSchema,
+  GearId,
+  GearItemSchema,
+  GearKind,
   LIMITS,
   PlanningStatus,
   SceneId,
@@ -65,6 +68,7 @@ const ShotFields = z
     angle: ShotAngleEnum.nullable(),
     movement: ShotMovementEnum.nullable(),
     cameraNotes: t(),
+    gear: z.array(GearId).max(12),
     priority: ShotPriority,
     captured: z.boolean(),
   })
@@ -73,6 +77,11 @@ const ShotFields = z
 export type ShotFields = z.infer<typeof ShotFields>;
 
 const NewShot = ShotFields.extend({ description: t(LIMITS.shortText * 4).trim().min(1, 'A shot needs a short description') });
+
+const GearFields = z
+  .object({ name: t(80), kind: GearKind, notes: t(LIMITS.shortText) })
+  .partial()
+  .strict();
 
 export const OperationSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('updateEpisode'), fields: EpisodeFields }),
@@ -120,6 +129,9 @@ export const OperationSchema = z.discriminatedUnion('op', [
       .strict(),
   }),
   z.object({ op: z.literal('removeAttachment'), sceneId: SceneId, attachmentId: AttachmentId }),
+  z.object({ op: z.literal('addGear'), id: GearId.optional(), item: GearFields.extend({ name: t(80).trim().min(1) }) }),
+  z.object({ op: z.literal('updateGear'), gearId: GearId, fields: GearFields }),
+  z.object({ op: z.literal('removeGear'), gearId: GearId }),
   z.object({ op: z.literal('saveStoryboard'), sceneId: SceneId, storyboard: StoryboardInputSchema }),
   z.object({ op: z.literal('deleteStoryboard'), sceneId: SceneId }),
 ]);
@@ -142,7 +154,7 @@ export class OperationError extends Error {
 }
 
 export interface ApplyContext {
-  newId(prefix: 'sc' | 'sh' | 'at' | 'sb' | 'as'): string;
+  newId(prefix: 'sc' | 'sh' | 'at' | 'sb' | 'as' | 'ge'): string;
   /** Revision number this batch will create. */
   nextRevision: number;
   /** Server: metadata for an uploaded asset owned by this episode, or null. */
@@ -169,7 +181,7 @@ export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyC
   const toRender = new Set<string>();
   const created: Record<number, string> = {};
   const allIds = () => {
-    const ids = new Set<string>();
+    const ids = new Set<string>((doc.gear ?? []).map((g) => g.id));
     for (const s of doc.scenes) {
       ids.add(s.id);
       s.shots.forEach((x) => ids.add(x.id));
@@ -180,7 +192,7 @@ export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyC
   // IDs present at the start of the batch can't be reused, even if removed earlier in the batch:
   // a new item must never inherit another item's identity (or a drawing's background reference).
   const initialIds = allIds();
-  const freshId = (prefix: 'sc' | 'sh' | 'at', requested: string | undefined, i: number) => {
+  const freshId = (prefix: 'sc' | 'sh' | 'at' | 'ge', requested: string | undefined, i: number) => {
     if (requested) {
       if (initialIds.has(requested) || allIds().has(requested)) throw new OperationError(`ID ${requested} is already in use`, i);
       return requested;
@@ -295,6 +307,31 @@ export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyC
         // unless this batch also replaced or detached the background.
         break;
       }
+      case 'addGear': {
+        doc.gear ??= [];
+        if (doc.gear.length >= 100) throw new OperationError('The kit list is full (100 items)', i);
+        const id = freshId('ge', op.id, i);
+        const parsedItem = GearItemSchema.safeParse({ ...op.item, id });
+        if (!parsedItem.success) throw new OperationError(formatZodError(parsedItem.error), i);
+        doc.gear.push(parsedItem.data);
+        created[i] = id;
+        break;
+      }
+      case 'updateGear': {
+        const g = (doc.gear ?? []).find((x) => x.id === op.gearId);
+        if (!g) throw new OperationError(`Gear ${op.gearId} is not in the kit list`, i);
+        Object.assign(g, op.fields);
+        break;
+      }
+      case 'removeGear': {
+        const list = doc.gear ?? [];
+        const g = list.find((x) => x.id === op.gearId);
+        if (!g) throw new OperationError(`Gear ${op.gearId} is not in the kit list`, i);
+        list.splice(list.indexOf(g), 1);
+        // Removing kit also removes it from the shots that used it (an explicit, visible change).
+        for (const sc of doc.scenes) for (const sh of sc.shots) if (sh.gear?.includes(g.id)) sh.gear = sh.gear.filter((x) => x !== g.id);
+        break;
+      }
       case 'saveStoryboard': {
         const s = scene(op.sceneId);
         s.storyboard = {
@@ -384,6 +421,12 @@ export function summariseOperations(before: EpisodeDoc, ops: Operation[]): strin
         return `Edited reference in ${title(op.sceneId)}`;
       case 'removeAttachment':
         return `Removed reference from ${title(op.sceneId)}`;
+      case 'addGear':
+        return `Added "${op.item.name}" to the kit list`;
+      case 'updateGear':
+        return 'Edited the kit list';
+      case 'removeGear':
+        return 'Removed an item from the kit list';
       case 'saveStoryboard':
         return `Saved storyboard for ${title(op.sceneId)}`;
       case 'deleteStoryboard':

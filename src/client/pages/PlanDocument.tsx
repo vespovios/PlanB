@@ -5,7 +5,8 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { buildChecklist } from '../../shared/checklist';
 import { parseFiveLines } from '../../shared/outline';
-import { capturedCount, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode, type ImageAttachment, type Scene } from '../../shared/model';
+import { GEAR_KINDS, capturedCount, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode, type GearItem, type ImageAttachment, type Scene } from '../../shared/model';
+import { GEAR_KIND_LABELS } from '../planner/KitList';
 import { CUT_TYPES, PACING, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term, type Term } from '../../shared/vocab';
 import { assetUrl } from '../api';
 import { useEpisodeSync } from '../sync';
@@ -18,9 +19,10 @@ import { href } from '../router';
 const PALETTE = ['#2f6fdf', '#d9822b', '#2e9e6a', '#a24fd0', '#d64545', '#1aa3b8', '#b8960c', '#6b7a99'];
 const NO_LOCATION = '#9aa3b2';
 
-type Section = 'cover' | 'story' | 'shots' | 'board' | 'breakdown' | 'guides' | 'notes';
+type Section = 'cover' | 'kit' | 'story' | 'shots' | 'board' | 'breakdown' | 'guides' | 'notes';
 const SECTIONS: { key: Section; label: string }[] = [
   { key: 'cover', label: 'Cover & overview' },
+  { key: 'kit', label: 'Kit & packing list' },
   { key: 'story', label: 'Story outline' },
   { key: 'shots', label: 'Shot list' },
   { key: 'board', label: 'Storyboard' },
@@ -52,7 +54,7 @@ function sceneColours(episode: Episode) {
 
 export function PlanDocumentPage({ id }: { id: string }) {
   const { episode, loadError } = useEpisodeSync(id);
-  const [on, setOn] = useState<Record<Section, boolean>>({ cover: true, story: true, shots: true, board: true, breakdown: true, guides: true, notes: false });
+  const [on, setOn] = useState<Record<Section, boolean>>({ cover: true, kit: true, story: true, shots: true, board: true, breakdown: true, guides: true, notes: false });
   const [byLocation, setByLocation] = useState(false);
   const [scenePerPage, setScenePerPage] = useState(false);
   const [references, setReferences] = useState(true);
@@ -66,7 +68,8 @@ export function PlanDocumentPage({ id }: { id: string }) {
   const shots = episode.scenes.flatMap((s) => s.shots);
   const essential = shots.filter((s) => s.priority === 'essential').length;
   // Only show spec columns that this plan actually uses.
-  const cols = { size: shots.some((s) => s.size), angle: shots.some((s) => s.angle), movement: shots.some((s) => s.movement) };
+  const cols = { size: shots.some((s) => s.size), angle: shots.some((s) => s.angle), movement: shots.some((s) => s.movement), gear: shots.some((s) => s.gear?.length) };
+  const gearById = new Map((episode.gear ?? []).map((g) => [g.id, g]));
   const printedAt = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
   const footer = `${episode.title} · PlanB revision ${episode.revision}`;
 
@@ -111,6 +114,8 @@ export function PlanDocumentPage({ id }: { id: string }) {
       <article className="pk">
         {on.cover && <Cover episode={episode} starts={starts} total={total} essential={essential} shots={shots.length} colours={colours} printedAt={printedAt} />}
 
+        {on.kit && (episode.gear ?? []).length > 0 && <KitSection episode={episode} />}
+
         {on.story && episode.outline.trim() && (
           <PkSection title="Story outline" kicker="Story">
             {episode.brief.trim() && !on.cover && <p className="pk-lede">{episode.brief.trim()}</p>}
@@ -124,7 +129,7 @@ export function PlanDocumentPage({ id }: { id: string }) {
               <div key={gi} className="pk-shot-group">
                 {byLocation && <h3 className="pk-group-title">📍 {group.location ?? 'No location given'}</h3>}
                 {group.scenes.map(({ scene, index, start }) => (
-                  <ShotTable key={scene.id} scene={scene} index={index} start={start} colour={colours.of(scene)} cols={cols} />
+                  <ShotTable key={scene.id} scene={scene} index={index} start={start} colour={colours.of(scene)} cols={cols} gearById={gearById} />
                 ))}
               </div>
             ))}
@@ -335,9 +340,11 @@ interface SpecColumns {
   size: boolean;
   angle: boolean;
   movement: boolean;
+  gear: boolean;
 }
 
-function ShotTable({ scene, index, start, colour, cols }: { scene: Scene; index: number; start: number; colour: string; cols: SpecColumns }) {
+function ShotTable({ scene, index, start, colour, cols, gearById }: { scene: Scene; index: number; start: number; colour: string; cols: SpecColumns; gearById: Map<string, GearItem> }) {
+  const sceneGear = [...new Set(scene.shots.flatMap((sh) => sh.gear ?? []))].map((id) => gearById.get(id)?.name).filter(Boolean);
   const c = capturedCount(scene);
   return (
     <div className={`pk-scene-block ${scene.shots.length <= 6 ? 'keep-together' : ''}`} style={{ ['--scene' as string]: colour }}>
@@ -355,6 +362,7 @@ function ShotTable({ scene, index, start, colour, cols }: { scene: Scene; index:
         {scene.location && <span>📍 {clip(scene.location, 90)}</span>}
         {scene.purpose && <span>◎ {clip(scene.purpose, 160)}</span>}
         {scene.audio && <span>♪ {clip(scene.audio, 140)}</span>}
+        {sceneGear.length > 0 && <span>🎒 {sceneGear.join(' · ')}</span>}
       </div>
       {scene.shots.length > 0 ? (
         <table className="pk-shots">
@@ -366,6 +374,7 @@ function ShotTable({ scene, index, start, colour, cols }: { scene: Scene; index:
               {cols.angle && <th className="col-spec">Angle</th>}
               {cols.movement && <th className="col-spec">Move</th>}
               <th>Description</th>
+              {cols.gear && <th className="col-gear">Gear</th>}
               <th className="col-pri" aria-label="Priority" />
             </tr>
           </thead>
@@ -403,6 +412,15 @@ function ShotTable({ scene, index, start, colour, cols }: { scene: Scene; index:
                   {shot.description}
                   {shot.cameraNotes && <span className="pk-shot-notes">{shot.cameraNotes}</span>}
                 </td>
+                {cols.gear && (
+                  <td className="col-gear">
+                    {(shot.gear ?? []).map((id) => gearById.get(id)).filter(Boolean).map((g) => (
+                      <span key={g!.id} className="pk-gear-tag">
+                        {g!.name}
+                      </span>
+                    ))}
+                  </td>
+                )}
                 <td className="col-pri">{shot.priority === 'essential' ? '★' : <span className="pk-faint">opt</span>}</td>
               </tr>
             ))}
@@ -582,5 +600,53 @@ function GuideTable({ title, list, used }: { title: string; list: readonly Term[
         </tbody>
       </table>
     </div>
+  );
+}
+
+function KitSection({ episode }: { episode: Episode }) {
+  const gear = episode.gear ?? [];
+  const usedIn = (id: string) =>
+    episode.scenes.flatMap((sc, i) => sc.shots.map((sh, j) => (sh.gear?.includes(id) ? shotRef(i, j) : null))).filter((x): x is string => !!x);
+  return (
+    <PkSection title="Kit & packing list" kicker="Before you leave" note="Tick as you pack. “Used in” lists the shots that need each item.">
+      <div className="pk-kit-groups">
+        {GEAR_KINDS.filter((k) => gear.some((g) => g.kind === k)).map((k) => (
+          <div key={k} className="pk-kit-group">
+            <h3 className="pk-guide-title">{GEAR_KIND_LABELS[k]}</h3>
+            <table className="pk-kit-table">
+              <tbody>
+                {gear
+                  .filter((g) => g.kind === k)
+                  .map((g) => {
+                    const refs = usedIn(g.id);
+                    return (
+                      <tr key={g.id}>
+                        <td className="col-check">
+                          <span className="pk-box" />
+                        </td>
+                        <td>
+                          <strong>{g.name}</strong>
+                          {g.notes && <span className="pk-shot-notes">{g.notes}</span>}
+                        </td>
+                        <td className="pk-kit-used">{refs.length ? `Used in ${refs.length > 12 ? `${refs.slice(0, 12).join(', ')} +${refs.length - 12}` : refs.join(', ')}` : <span className="pk-faint">not assigned</span>}</td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+      <div className="pk-kit-extra">
+        <h3 className="pk-guide-title">Every day</h3>
+        <ul>
+          {['Batteries charged', 'Cards formatted / space checked', 'Lenses and mic windshields clean', 'Spare cables and power bank', 'Footage backed up (evening)'].map((t) => (
+            <li key={t}>
+              <span className="pk-box" /> {t}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </PkSection>
   );
 }

@@ -107,7 +107,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
       cutToNext: scene.cutToNext ?? null,
       capturedShots: captured,
       totalShots: total,
-      shots: scene.shots.map((s, j) => ({ ...s, size: s.size ?? null, angle: s.angle ?? null, movement: s.movement ?? null, order: j })),
+      shots: scene.shots.map((s, j) => ({ ...s, size: s.size ?? null, angle: s.angle ?? null, movement: s.movement ?? null, gear: s.gear ?? [], order: j })),
       attachments,
       storyboard,
     };
@@ -132,6 +132,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
       targetSeconds: episode.targetSeconds,
       totalSeconds: totalSeconds(episode),
     },
+    gear: (episode.gear ?? []).map(({ id, name, kind, notes }) => ({ id, name, kind, notes })),
     scenes,
     missingAssets: missing,
   };
@@ -141,6 +142,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
 }
 
 type Plan = {
+  gear: { id: string; name: string; kind: string; notes: string }[];
   episode: { title: string; revision: number; brief: string; outline: string; notes: string; status: string; targetSeconds: number | null; totalSeconds: number; id: string };
   scenes: {
     id: string;
@@ -158,7 +160,7 @@ type Plan = {
     capturedShots: number;
     totalShots: number;
     cutToNext: string | null;
-    shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; cameraNotes: string; priority: string; captured: boolean; id: string }[];
+    shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; gear: string[]; cameraNotes: string; priority: string; captured: boolean; id: string }[];
     attachments: ({ kind: 'link'; label: string; url: string; caption: string } | { kind: 'image'; label: string; file: string | null; caption: string })[];
     storyboard: { preview: string | null; document: string; description: string; summary: string } | null;
   }[];
@@ -181,6 +183,12 @@ export function planMarkdown(plan: Plan): string {
   if (e.brief) out.push('## Brief', '', e.brief, '');
   if (e.outline) out.push('## Story outline', '', e.outline, '');
   if (e.notes) out.push('## Loose notes', '', e.notes, '');
+  if (plan.gear.length) {
+    out.push('## Kit list', '');
+    for (const g of plan.gear) out.push(`- [ ] **${g.name}** (${g.kind})${g.notes ? ` — ${g.notes}` : ''}`);
+    out.push('');
+  }
+  const gearName = new Map(plan.gear.map((g) => [g.id, g.name]));
   out.push('## Scenes', '');
   for (const s of plan.scenes) {
     out.push(`### ${s.number} · ${s.title}`, '');
@@ -202,7 +210,8 @@ export function planMarkdown(plan: Plan): string {
       s.shots.forEach((sh) => {
         const spec = [term(SHOT_SIZES, sh.size)?.abbr, term(SHOT_ANGLES, sh.angle)?.abbr, term(SHOT_MOVEMENTS, sh.movement)?.abbr].filter(Boolean).join(' ');
         const meta = [spec, sh.framing, sh.priority, sh.captured ? 'captured (reported)' : 'not captured'].filter(Boolean).join(' · ');
-        out.push(`- [${sh.captured ? 'x' : ' '}] ${sh.description} — ${meta}${sh.cameraNotes ? ` — ${sh.cameraNotes}` : ''}`);
+        const kit = sh.gear.map((id) => gearName.get(id)).filter(Boolean).join(', ');
+        out.push(`- [${sh.captured ? 'x' : ' '}] ${sh.description} — ${meta}${sh.cameraNotes ? ` — ${sh.cameraNotes}` : ''}${kit ? ` — gear: ${kit}` : ''}`);
       });
       out.push('');
     }

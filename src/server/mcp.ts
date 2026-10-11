@@ -32,6 +32,8 @@ export function agentEpisodeView(ep: Episode) {
     outline: ep.outline,
     notes: ep.notes,
     status: ep.status,
+    /** Kit list: shots refer to these IDs in their gear field. */
+    gear: ep.gear ?? [],
     targetSeconds: ep.targetSeconds,
     totalSeconds: totalSeconds(ep),
     totalFormatted: formatTime(totalSeconds(ep)),
@@ -116,7 +118,8 @@ Each operation is an object whose "op" key names the operation, for example:
 [{"op":"updateEpisode","fields":{"outline":"…"}},{"op":"updateShot","sceneId":"sc_…","shotId":"sh_…","fields":{"size":"ws","angle":"eye","movement":"static"}},{"op":"updateScene","sceneId":"sc_…","fields":{"cutToNext":"jcut"}}]
 Operations: updateEpisode{fields:{title,brief,outline,notes,targetSeconds,status}}, addScene{scene:{title,durationSeconds,...optional fields, shots?}, index?}, updateScene{sceneId,fields}, deleteScene{sceneId}, restoreDeletedScene{sceneId,index?}, moveScene{sceneId,index}, addShot{sceneId,shot:{description,framing?,cameraNotes?,priority?},index?}, updateShot{sceneId,shotId,fields}, deleteShot, moveShot{sceneId,shotId,index}, addLink{sceneId,label,url,caption?}, addImage{sceneId,assetId,label?,caption?} (after upload_image), updateAttachment, removeAttachment, saveStoryboard{sceneId,storyboard} (see get_storyboard_schema), deleteStoryboard{sceneId}.
 Only include fields you intend to change. Scene fields: title, durationSeconds (whole seconds), status (draft|ready), description (visible action), purpose (what the viewer should understand or feel), notes (general/edit notes), voiceover (VO intent/text), audio (audio/music intent), location, thumbnailAttachmentId, cutToNext (editing intention into the next scene).
-Shot fields: description, framing (free text), size, angle, movement (keys from get_shot_and_cut_guide; null = unspecified), cameraNotes, priority (essential|optional), captured.`,
+Shot fields: description, framing (free text), size, angle, movement (keys from get_shot_and_cut_guide; null = unspecified), cameraNotes, gear (array of kit-list IDs), priority (essential|optional), captured.
+Kit list: addGear{id?, item:{name,kind,notes?}} (optional id like "ge_tripod01" goes on the operation, not inside item, so later operations in the same batch can reference it; kind: camera|lens|support|audio|light|power|storage|other), updateGear{gearId,fields}, removeGear{gearId} (also removes it from shots). Only assign gear that is in the episode's kit list; never assume the creator owns gear they have not listed — ask instead.`,
       inputSchema: {
         episodeId,
         baseRevision: z.number().int().min(1).describe('The revision returned by your latest get_episode'),

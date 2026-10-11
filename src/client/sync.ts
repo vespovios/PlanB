@@ -8,7 +8,7 @@ import type { Episode, EpisodeDoc, Scene } from '../shared/model';
 import { applyOperations, type ApplyContext, type Operation } from '../shared/ops';
 import { api, ApiError } from './api';
 
-type FieldOp = Extract<Operation, { op: 'updateEpisode' | 'updateScene' | 'updateShot' | 'updateAttachment' }>;
+type FieldOp = Extract<Operation, { op: 'updateEpisode' | 'updateScene' | 'updateShot' | 'updateAttachment' | 'updateGear' }>;
 interface Pending {
   op: Operation;
   key?: string;
@@ -33,12 +33,14 @@ export interface SyncSnapshot {
 }
 
 const isFieldOp = (op: Operation): op is FieldOp =>
-  op.op === 'updateEpisode' || op.op === 'updateScene' || op.op === 'updateShot' || op.op === 'updateAttachment';
+  op.op === 'updateEpisode' || op.op === 'updateScene' || op.op === 'updateShot' || op.op === 'updateAttachment' || op.op === 'updateGear';
 
 function opKey(op: FieldOp): string {
   switch (op.op) {
     case 'updateEpisode':
       return 'episode';
+    case 'updateGear':
+      return `gear:${op.gearId}`;
     case 'updateScene':
       return `scene:${op.sceneId}`;
     case 'updateShot':
@@ -50,6 +52,7 @@ function opKey(op: FieldOp): string {
 
 function target(doc: EpisodeDoc, op: FieldOp): Record<string, unknown> | null {
   if (op.op === 'updateEpisode') return doc as unknown as Record<string, unknown>;
+  if (op.op === 'updateGear') return ((doc.gear ?? []).find((g) => g.id === op.gearId) as unknown as Record<string, unknown>) ?? null;
   const scene = doc.scenes.find((s) => s.id === op.sceneId);
   if (!scene) return null;
   if (op.op === 'updateScene') return scene as unknown as Record<string, unknown>;
@@ -71,6 +74,7 @@ function fieldLabel(op: FieldOp, field: string, doc: EpisodeDoc): string {
   };
   const f = names[field] ?? field;
   if (op.op === 'updateEpisode') return `Episode ${f}`;
+  if (op.op === 'updateGear') return `Kit list ${f}`;
   const scene = doc.scenes.find((s) => s.id === op.sceneId);
   return `${scene ? `"${scene.title}"` : 'Scene'}${op.op === 'updateShot' ? ' shot' : op.op === 'updateAttachment' ? ' reference' : ''} ${f}`;
 }
