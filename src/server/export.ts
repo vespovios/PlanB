@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { PLAN_SCHEMA_VERSION, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode } from '../shared/model.js';
 import { STORYBOARD_SCHEMA_VERSION, describeObjects } from '../shared/storyboard.js';
+import { CUT_TYPES, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term } from '../shared/vocab.js';
 import type { AssetStore } from './assets.js';
 
 export const EXPORT_FORMAT = 'planb.plan';
@@ -103,9 +104,10 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
       audio: scene.audio,
       location: scene.location,
       thumbnailAttachmentId: scene.thumbnailAttachmentId,
+      cutToNext: scene.cutToNext ?? null,
       capturedShots: captured,
       totalShots: total,
-      shots: scene.shots.map((s, j) => ({ ...s, order: j })),
+      shots: scene.shots.map((s, j) => ({ ...s, size: s.size ?? null, angle: s.angle ?? null, movement: s.movement ?? null, order: j })),
       attachments,
       storyboard,
     };
@@ -155,7 +157,8 @@ type Plan = {
     location: string;
     capturedShots: number;
     totalShots: number;
-    shots: { description: string; framing: string; cameraNotes: string; priority: string; captured: boolean; id: string }[];
+    cutToNext: string | null;
+    shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; cameraNotes: string; priority: string; captured: boolean; id: string }[];
     attachments: ({ kind: 'link'; label: string; url: string; caption: string } | { kind: 'image'; label: string; file: string | null; caption: string })[];
     storyboard: { preview: string | null; document: string; description: string; summary: string } | null;
   }[];
@@ -197,11 +200,14 @@ export function planMarkdown(plan: Plan): string {
     if (s.shots.length) {
       out.push('**Shots:**', '');
       s.shots.forEach((sh) => {
-        const meta = [sh.framing, sh.priority, sh.captured ? 'captured (reported)' : 'not captured'].filter(Boolean).join(' · ');
+        const spec = [term(SHOT_SIZES, sh.size)?.abbr, term(SHOT_ANGLES, sh.angle)?.abbr, term(SHOT_MOVEMENTS, sh.movement)?.abbr].filter(Boolean).join(' ');
+        const meta = [spec, sh.framing, sh.priority, sh.captured ? 'captured (reported)' : 'not captured'].filter(Boolean).join(' · ');
         out.push(`- [${sh.captured ? 'x' : ' '}] ${sh.description} — ${meta}${sh.cameraNotes ? ` — ${sh.cameraNotes}` : ''}`);
       });
       out.push('');
     }
+    const cut = term(CUT_TYPES, s.cutToNext);
+    if (cut) out.push(`**Cut to next scene:** ${cut.label} — ${cut.use}`, '');
     if (s.attachments.length) {
       out.push('**References:**', '');
       for (const a of s.attachments) {

@@ -1,6 +1,6 @@
 # Portable plan bundle and storyboard schema
 
-**Download plan** (`GET /api/episodes/:id/export.zip`) produces an editor-independent handoff built from **one saved revision**. It is canonical PlanB planning data. It is **not** a native editor project and makes no claim of NLE import compatibility (see [ROADMAP.md](ROADMAP.md), Delivery C). Importing a bundle back into PlanB is not supported in Delivery A.
+**Download ZIP** (`GET /api/episodes/:id/export.zip`) produces an editor-independent handoff built from **one saved revision**. It is canonical PlanB planning data. It is **not** a native editor project and makes no claim of NLE import compatibility (see [ROADMAP.md](ROADMAP.md), Delivery C). Importing a bundle back into PlanB is not supported in Delivery A.
 
 ```
 planb-<title-slug>-r<revision>/
@@ -32,8 +32,9 @@ All paths inside the bundle are relative to the file that contains them. Externa
       "title": "…", "startSeconds": 0, "durationSeconds": 45, "status": "draft|ready",
       "description": "…", "purpose": "…", "notes": "…", "voiceover": "…", "audio": "…", "location": "…",
       "thumbnailAttachmentId": "at_…|null",
+      "cutToNext": "jcut|match|…|null",
       "capturedShots": 1, "totalShots": 3,
-      "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "cameraNotes": "…",
+      "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "size": "ws|null", "angle": "low|null", "movement": "track|null", "cameraNotes": "…",
                   "priority": "essential|optional", "captured": false }],
       "attachments": [
         { "id": "at_…", "kind": "image", "label": "…", "caption": "…", "assetId": "as_…",

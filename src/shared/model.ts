@@ -2,6 +2,7 @@
 // so every writer goes through the same validation.
 import { z } from 'zod';
 import { StoryboardSchema } from './storyboard.js';
+import { CUT_TYPES, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, keysOf } from './vocab.js';
 
 /** Version of the exported plan.json / episode document shape (independent of the product brief label). */
 export const PLAN_SCHEMA_VERSION = 1;
@@ -35,11 +36,19 @@ export const Duration = z
 
 export const PlanningStatus = z.enum(['draft', 'ready']);
 export const ShotPriority = z.enum(['essential', 'optional']);
+export const ShotSizeEnum = z.enum(keysOf(SHOT_SIZES));
+export const ShotAngleEnum = z.enum(keysOf(SHOT_ANGLES));
+export const ShotMovementEnum = z.enum(keysOf(SHOT_MOVEMENTS));
+export const CutTypeEnum = z.enum(keysOf(CUT_TYPES));
 
 export const ShotSchema = z.object({
   id: ShotId,
   description: text(LIMITS.shortText * 4).min(1, 'A shot needs a short description'),
   framing: text(LIMITS.shortText).default(''),
+  /** Optional structured framing from the shared vocabulary (see vocab.ts). */
+  size: ShotSizeEnum.nullable().default(null),
+  angle: ShotAngleEnum.nullable().default(null),
+  movement: ShotMovementEnum.nullable().default(null),
   cameraNotes: text().default(''),
   priority: ShotPriority.default('essential'),
   captured: z.boolean().default(false),
@@ -95,6 +104,8 @@ export const SceneSchema = z.object({
   audio: text().default(''),
   location: text(LIMITS.shortText).default(''),
   thumbnailAttachmentId: AttachmentId.nullable().default(null),
+  /** Editing intention for the transition into the next scene (rough-cut guide). */
+  cutToNext: CutTypeEnum.nullable().default(null),
   shots: z.array(ShotSchema).max(LIMITS.maxShotsPerScene).default([]),
   attachments: z.array(AttachmentSchema).max(LIMITS.maxAttachmentsPerScene).default([]),
   storyboard: StoryboardSchema.nullable().default(null),

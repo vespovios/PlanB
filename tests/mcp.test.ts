@@ -47,6 +47,7 @@ describe('MCP adapter', () => {
         'get_episode',
         'get_filming_checklist',
         'get_image',
+        'get_shot_and_cut_guide',
         'get_storyboard',
         'get_storyboard_schema',
         'get_workflow_guide',

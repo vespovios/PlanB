@@ -101,8 +101,11 @@ export function PlannerPage({ id }: { id: string }) {
       <a className="btn ghost" href={href.checklist(episode.id)}>
         Filming checklist
       </a>
-      <button type="button" className="btn ghost" onClick={download}>
-        Download plan
+      <a className="btn ghost" href={href.document(episode.id)} title="Formatted plan to print or save as PDF">
+        Plan document
+      </a>
+      <button type="button" className="btn ghost" onClick={download} title="ZIP with plan.json, plan.md, images and editable storyboards, for handing the plan to other tools or people">
+        Download ZIP
       </button>
       <button type="button" className="btn ghost" onClick={() => setHistoryOpen(true)}>
         History

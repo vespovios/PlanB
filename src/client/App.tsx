@@ -5,6 +5,7 @@ import { LoginPage } from './pages/Login';
 import { EpisodesPage } from './pages/Episodes';
 import { PlannerPage } from './pages/Planner';
 import { ChecklistPage } from './pages/Checklist';
+import { PlanDocumentPage } from './pages/PlanDocument';
 import { SettingsPage } from './pages/Settings';
 
 export function App() {
@@ -38,6 +39,8 @@ export function App() {
       return <PlannerPage key={route.id} id={route.id} />;
     case 'checklist':
       return <ChecklistPage key={route.id} id={route.id} />;
+    case 'document':
+      return <PlanDocumentPage key={route.id} id={route.id} />;
     case 'settings':
       return <SettingsPage user={user} onSignOut={signOut} />;
     default:

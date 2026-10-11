@@ -60,6 +60,16 @@ Adjust the outline to the events and available material. Offer practical alterna
 
 Develop narration only when requested, using the creator's wording and reported experience. Leave uncertain facts as questions. Suggest a read-aloud pass for natural delivery. Use the portable PlanB export or a concise response to hand off scene IDs, order, estimated durations, purpose, narration, visual references and remaining gaps. Native editor formats belong to the later adapter delivery.
 
+### Writing voice-over (PlanB tip)
+
+When the creator asks for narration, write it to be spoken, not read:
+
+- **Start from their words.** Build each line from the creator's own notes, the outline's five lines and what they reported. Don't add feelings, events or conclusions they haven't expressed; leave a `Question:` instead.
+- **One idea per sentence.** Use short, plain sentences in the creator's natural register, with present tense where it fits the moment.
+- **Leave room.** Narration supports pictures and sound, so don't cover every second. Mark where the shot should breathe, or where a real sound or conversation should carry the scene.
+- **Fit the time.** Spoken narration runs roughly 2–3 words per second. Compare the draft with the scene's duration, and flag lines that are too long rather than stretching the scene.
+- **Mark it as a draft.** Put the text in the scene's `voiceover` field, labelled as proposed wording, and suggest a read-aloud pass. The creator's recorded delivery decides the final words.
+
 ## Visual references and handoff
 
 Read the latest attachment list and drawing description when they matter to a request. If image inspection is available, retrieve the authorised preview or original through the API and inspect it before making visual claims. Otherwise explain the limitation and work from the creator's text. An asset filename or captured checkbox is not evidence of what an image or video shows.
@@ -91,8 +101,9 @@ This appendix maps the workflow above onto PlanB's MCP tools (the same operation
 - **Find the episode:** `list_episodes`, then `get_episode`. The result includes `revision`; keep it.
 - **Write:** `apply_changes` with `baseRevision` set to the revision you read, a short `summary`, and only the operations you need. One coherent request → one call → one revision in the creator's History.
 - **Stale write:** if the result says `stale_revision`, call `get_episode` again, look at what changed (`newerRevisions` lists who changed what), and reapply only your intended change. Never resend old values over newer ones.
+- **Five-line outline:** if the creator wants the five-line structure, write the outline with one line per label: `Setup:`, `Desire:`, `Conflict:`, `Change:`, `Result:`. Add the scenes each line covers in brackets, e.g. `Conflict: the strap works loose at the fuel stop (S04–S05)`. The production pack shows these lines on its cover, linked to the scenes. A line can cover several scenes, and lines can stay open ("Result: unknown until the trip").
 - **Fields:** episode `outline` (optional story outline), `notes` (loose notes; use `Planned:`, `Observed:`, `Question:` labels), `brief`, `targetSeconds`. Scene `purpose` (what the viewer should understand or feel), `description` (visible action), `voiceover` (VO intent/draft), `audio` (audio/music intent), `notes` (general/edit notes), `location`, `durationSeconds` (whole seconds, screen time), `status` (`draft`/`ready`, set by the creator).
-- **Shots:** `addShot`/`updateShot`/`moveShot`/`deleteShot`. `priority` is `essential` or `optional`. Leave `captured` alone unless the creator reports filming; a captured shot is not reviewed footage.
+- **Shots:** `addShot`/`updateShot`/`moveShot`/`deleteShot`. `priority` is `essential` or `optional`. Call `get_shot_and_cut_guide` and set `size`, `angle` and `movement` from that vocabulary when the framing matters (the printed pack shows them as pictograms); keep `framing` for free text such as "chest mount". Set a scene's `cutToNext` only as an editing intention, and only plan a match cut or J/L-cut when the shots it needs are on the list. Leave `captured` alone unless the creator reports filming; a captured shot is not reviewed footage.
 - **Checklist:** `get_filming_checklist` (optionally grouped by location).
 - **References:** `addLink` for web links; `upload_image` (base64 PNG/JPEG supplied by the creator) then `addImage`. Do not fetch arbitrary URLs into PlanB.
 - **Drawings:** `get_storyboard_schema`, `get_storyboard`, then `saveStoryboard` with the whole document (keep existing objects and the background). The server renders the PNG preview. Use `get_image` to look at a preview or reference before making visual claims.

@@ -3,6 +3,22 @@ import { randomId } from '../../shared/ids';
 import { capturedCount, type Scene, type Shot } from '../../shared/model';
 import type { EpisodeSync } from '../sync';
 import { Disclosure, TextField } from '../components/ui';
+import { ShotSizeIcon } from '../components/ShotIcons';
+import { SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, type Term } from '../../shared/vocab';
+
+/** Compact select for one vocabulary list; empty means "not specified". */
+function SpecSelect({ list, value, label, onChange }: { list: readonly Term[]; value: string | null | undefined; label: string; onChange: (v: string | null) => void }) {
+  return (
+    <select className={`spec-select ${value ? 'set' : ''}`} aria-label={label} title={label} value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+      <option value="">{label}</option>
+      {list.map((t) => (
+        <option key={t.key} value={t.key}>
+          {t.abbr} · {t.label}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 const TEXT_DEBOUNCE = 700;
 
@@ -78,6 +94,7 @@ function ShotRow({ shot, index, count, scene, engine }: { shot: Shot; index: num
       <label className="shot-check" title="Captured: you filmed this shot">
         <input type="checkbox" checked={shot.captured} onChange={(e) => update({ captured: e.target.checked })} aria-label={`Captured: ${shot.description}`} />
         <span className="shot-num">{String(index + 1).padStart(2, '0')}</span>
+        <ShotSizeIcon size={shot.size} />
       </label>
       <div className="shot-body">
         <div className="shot-line">
@@ -98,6 +115,11 @@ function ShotRow({ shot, index, count, scene, engine }: { shot: Shot; index: num
           >
             {shot.priority === 'essential' ? 'Essential' : 'Optional'}
           </button>
+        </div>
+        <div className="shot-specs">
+          <SpecSelect list={SHOT_SIZES} label="Size" value={shot.size} onChange={(v) => update({ size: v as Shot['size'] })} />
+          <SpecSelect list={SHOT_ANGLES} label="Angle" value={shot.angle} onChange={(v) => update({ angle: v as Shot['angle'] })} />
+          <SpecSelect list={SHOT_MOVEMENTS} label="Move" value={shot.movement} onChange={(v) => update({ movement: v as Shot['movement'] })} />
         </div>
         <TextField
           multiline

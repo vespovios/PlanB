@@ -19,7 +19,9 @@ This repository implements **Delivery A** of the v0.3 brief in [`PlanB-Handoff/`
 - **Filming checklist and print view:** story order, or grouped by location. It works on a phone and prints to paper or PDF.
 - **Revisions:** every save is a revision. Stale writes are rejected, and you can undo or restore from History; nothing is erased.
 - **Agent access:** an authenticated REST API and an MCP server (Streamable HTTP) with the same validation and save logic as the browser. Agent writes appear in open browsers live.
-- **Download plan:** a portable ZIP containing `plan.json`, `plan.md`, `assets/` and `storyboards/`, all from one saved revision.
+- **Plan document (production pack):** a printable, field-ready pack: cover with key facts and a colour-coded running order, a checkable shot list (1A/1B numbering, shot-size pictograms, angle and movement), a storyboard board, a scene breakdown, and a shot & cut guide. Print it, or choose Save as PDF.
+- **Shot & cut vocabulary:** shots can carry a size (EWS…ECU, insert), angle and movement, and each scene an intended cut into the next (J-cut, match cut, montage…). The same definitions are used in the app, the printed pack, the export and the agent tools.
+- **Download ZIP:** a portable bundle containing `plan.json`, `plan.md`, `assets/` and `storyboards/`, all from one saved revision. It is for handing the plan to other people or tools; it is not re-imported into PlanB.
 - **Deployment:** Docker + Caddy (HTTPS), with backup/restore that keeps the database and assets together.
 
 ## Stack (and why)

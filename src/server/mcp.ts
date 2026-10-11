@@ -12,6 +12,7 @@ import type { Principal } from './auth.js';
 import type { Services } from './app.js';
 import { HttpError } from './errors.js';
 import { storyboardSchemaDocument } from './schema-doc.js';
+import { vocabularyForAgents } from '../shared/vocab.js';
 
 const INSTRUCTIONS = `PlanB is the creator's shared episode planner. The saved project is the source of truth for both the creator (in the browser) and you.
 Rules: call get_episode before writing and pass its revision as baseRevision to apply_changes. If a change is rejected as stale, read again and reapply only the intended change; never bypass the check.
@@ -112,7 +113,8 @@ export function createMcpServer(services: Services, principal: Principal, appVer
       title: 'Apply changes',
       description: `Apply a batch of operations atomically as ONE revision, based on the revision you read. Rejected with stale_revision if the episode changed since; then call get_episode and reapply only the intended change.
 Operations: updateEpisode{fields:{title,brief,outline,notes,targetSeconds,status}}, addScene{scene:{title,durationSeconds,...optional fields, shots?}, index?}, updateScene{sceneId,fields}, deleteScene{sceneId}, restoreDeletedScene{sceneId,index?}, moveScene{sceneId,index}, addShot{sceneId,shot:{description,framing?,cameraNotes?,priority?},index?}, updateShot{sceneId,shotId,fields}, deleteShot, moveShot{sceneId,shotId,index}, addLink{sceneId,label,url,caption?}, addImage{sceneId,assetId,label?,caption?} (after upload_image), updateAttachment, removeAttachment, saveStoryboard{sceneId,storyboard} (see get_storyboard_schema), deleteStoryboard{sceneId}.
-Only include fields you intend to change. Scene fields: title, durationSeconds (whole seconds), status (draft|ready), description (visible action), purpose (what the viewer should understand or feel), notes (general/edit notes), voiceover (VO intent/text), audio (audio/music intent), location, thumbnailAttachmentId.`,
+Only include fields you intend to change. Scene fields: title, durationSeconds (whole seconds), status (draft|ready), description (visible action), purpose (what the viewer should understand or feel), notes (general/edit notes), voiceover (VO intent/text), audio (audio/music intent), location, thumbnailAttachmentId, cutToNext (editing intention into the next scene).
+Shot fields: description, framing (free text), size, angle, movement (keys from get_shot_and_cut_guide; null = unspecified), cameraNotes, priority (essential|optional), captured.`,
       inputSchema: {
         episodeId,
         baseRevision: z.number().int().min(1).describe('The revision returned by your latest get_episode'),
@@ -228,6 +230,17 @@ Only include fields you intend to change. Scene fields: title, durationSeconds (
         const row = await assets.saveUpload(principal.user.id, episodeId, Buffer.from(base64, 'base64'), filename ?? null);
         return { assetId: row.id, mime: row.mime, width: row.width, height: row.height, bytes: row.bytes };
       }),
+  );
+
+  server.registerTool(
+    'get_shot_and_cut_guide',
+    {
+      title: 'Shot and cut guide',
+      description:
+        'The shared vocabulary for shot size, camera angle, camera movement and cut types (keys, abbreviations, definitions and when to use them). Use these keys for shot size/angle/movement and scene cutToNext; the printed plan shows matching pictograms and a cut guide.',
+      inputSchema: {},
+    },
+    async () => json(vocabularyForAgents()),
   );
 
   server.registerTool(

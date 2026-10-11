@@ -131,6 +131,23 @@ describe('planning (acceptance 1–3, 10, 11, 13)', () => {
     expect(reuse.statusCode).toBe(400);
   });
 
+  it('validates shot size/angle/movement and scene cut vocabulary', async () => {
+    const ep = await createExample(asUser(ctx.cookieA));
+    const sc = ep.scenes[0];
+    const ok = await change(asAgent(ctx.tokenA), ep, [
+      { op: 'updateShot', sceneId: sc.id, shotId: sc.shots[0].id, fields: { size: 'ews', angle: 'aerial', movement: 'aerial' } },
+      { op: 'addShot', sceneId: sc.id, shot: { description: 'Buckle detail', size: 'ins', movement: 'static' } },
+      { op: 'updateScene', sceneId: sc.id, fields: { cutToNext: 'lcut' } },
+    ]);
+    expect(ok.statusCode).toBe(200);
+    const s0 = ok.json().episode.scenes[0];
+    expect(s0.shots[0]).toMatchObject({ size: 'ews', angle: 'aerial', movement: 'aerial' });
+    expect(s0.shots[3]).toMatchObject({ size: 'ins', angle: null, movement: 'static' });
+    expect(s0.cutToNext).toBe('lcut');
+    const bad = await change(asAgent(ctx.tokenA), ok.json().episode, [{ op: 'updateShot', sceneId: sc.id, shotId: sc.shots[0].id, fields: { size: 'huge' } }]);
+    expect(bad.statusCode).toBe(400);
+  });
+
   it('deleted scenes can be restored with their shots', async () => {
     let ep = await createExample(asUser(ctx.cookieA));
     const victim = ep.scenes[2];

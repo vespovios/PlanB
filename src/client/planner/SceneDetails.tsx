@@ -4,6 +4,7 @@ import { assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
 import { Confirm, Disclosure, DurationField, Modal, Segmented, TextField } from '../components/ui';
 import { References } from './References';
+import { CUT_TYPES } from '../../shared/vocab';
 import { StoryboardEditor } from '../storyboard/StoryboardEditor';
 
 const TEXT_DEBOUNCE = 700;
@@ -79,7 +80,22 @@ export function SceneDetails({ scene, index, start, count, engine, episodeId, on
             onBlur={flush}
           />
         </Disclosure>
-        <Disclosure label="Notes / edit intent" filled={!!scene.notes} hint="General notes, e.g. leave a pause or match movement for a transition">
+        <Disclosure label="Notes / edit intent" filled={!!scene.notes || !!scene.cutToNext} hint="General notes, e.g. leave a pause or match movement for a transition">
+          <div className="field">
+            <label htmlFor={`cut-${scene.id}`}>Cut to the next scene</label>
+            <select
+              id={`cut-${scene.id}`}
+              value={scene.cutToNext ?? ''}
+              onChange={(e) => set({ cutToNext: (e.target.value || null) as Scene['cutToNext'] }, 0)}
+            >
+              <option value="">Not decided</option>
+              {CUT_TYPES.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.label} — {c.use}
+                </option>
+              ))}
+            </select>
+          </div>
           <TextField
             multiline
             ariaLabel="General and edit notes"

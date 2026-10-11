@@ -8,6 +8,9 @@ const prune = setInterval(() => app.services.auth.pruneSessions(), 6 * 60 * 60 *
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.on(signal, async () => {
     clearInterval(prune);
+    // Open live-update (SSE) connections can keep close() waiting; don't hang on shutdown.
+    setTimeout(() => process.exit(0), 3000).unref();
+    app.server.closeAllConnections?.();
     await app.close();
     process.exit(0);
   });

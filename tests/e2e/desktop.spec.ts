@@ -315,3 +315,50 @@ test('connection loss: edits and drawings are kept, never shown as saved, then s
   expect(ep.scenes[0].description).toBe('Typed while offline');
   expect(ep.scenes[0].storyboard.objects).toHaveLength(1);
 });
+
+test('production pack: cover, shot list with specs, storyboard, breakdown and guides', async ({ page }) => {
+  await login(page);
+  const id = await createEpisode(page, 'Printable plan');
+  // Give one shot a size/angle/movement and plan a cut, through the editor.
+  await page.locator('.shot-specs').first().getByLabel('Size').selectOption('ws');
+  await page.locator('.shot-specs').first().getByLabel('Angle').selectOption('low');
+  await page.locator('.shot-specs').first().getByLabel('Move').selectOption('track');
+  await page.getByRole('button', { name: '+ Notes / edit intent' }).click();
+  await page.getByLabel('Cut to the next scene').selectOption('jcut');
+  await waitSaved(page);
+  const ep = (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode;
+  expect(ep.scenes[0].shots[0]).toMatchObject({ size: 'ws', angle: 'low', movement: 'track' });
+  expect(ep.scenes[0].cutToNext).toBe('jcut');
+
+  // A five-line outline appears on the pack cover, linked to scenes.
+  await page.getByRole('button', { name: '+ Brief, outline & notes' }).click();
+  await page.getByRole('button', { name: '+ Story outline' }).click();
+  await page.getByLabel('Story outline').fill('Setup: two riders pack (S01–S02)\nDesire: reach the mountains\nConflict: a long road (S03)\nChange: coffee stop (S04)\nResult: open');
+  await waitSaved(page);
+  await page.getByRole('link', { name: 'Plan document' }).click();
+  await expect(page.locator('.pk-cover h1')).toHaveText('Printable plan');
+  await expect(page.locator('.pk-five li')).toHaveCount(5);
+  await expect(page.locator('.pk-five li').first()).toContainText('two riders pack');
+  await expect(page.locator('.pk-five li').first().locator('.pk-scene-chip')).toHaveText(['S01', 'S02']);
+  await expect(page.locator('.pk-facts')).toContainText('02:45');
+  await expect(page.locator('.pk-runbar-seg')).toHaveCount(4);
+  await expect(page.locator('.pk-scene-block')).toHaveCount(4);
+  const first = page.locator('.pk-shots tbody tr').first();
+  await expect(first).toContainText('1A');
+  await expect(first).toContainText('WS');
+  await expect(first).toContainText('LOW');
+  await expect(first).toContainText('TRACK');
+  await expect(first.locator('svg.shot-icon')).toHaveCount(1);
+  await expect(page.locator('.pk-frame')).toHaveCount(4);
+  await expect(page.locator('.pk-frame').first()).toContainText('J-cut');
+  await expect(page.locator('.pk-breakdown')).toHaveCount(4);
+  await expect(page.locator('.pk-size-card.used')).toHaveCount(1);
+  await expect(page.locator('.pk-cuts tr.used')).toContainText('S01→S02');
+
+  await page.emulateMedia({ media: 'print' });
+  await expect(page.locator('.topbar')).toBeHidden();
+  await expect(page.locator('.pk-options')).toBeHidden();
+  const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
+  // Cover, shot list, storyboard, breakdown and guide each start a page.
+  expect((pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBeGreaterThanOrEqual(5);
+});

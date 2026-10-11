@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   AssetId,
   AttachmentId,
+  CutTypeEnum,
   Duration,
   EpisodeDocSchema,
   LIMITS,
@@ -11,8 +12,11 @@ import {
   SceneId,
   SceneSchema,
   ShotId,
+  ShotAngleEnum,
+  ShotMovementEnum,
   ShotPriority,
   ShotSchema,
+  ShotSizeEnum,
   referentialProblems,
   type Attachment,
   type EpisodeDoc,
@@ -47,6 +51,7 @@ const SceneFields = z
     audio: t(),
     location: t(LIMITS.shortText),
     thumbnailAttachmentId: AttachmentId.nullable(),
+    cutToNext: CutTypeEnum.nullable(),
   })
   .partial()
   .strict();
@@ -56,6 +61,9 @@ const ShotFields = z
   .object({
     description: t(LIMITS.shortText * 4),
     framing: t(LIMITS.shortText),
+    size: ShotSizeEnum.nullable(),
+    angle: ShotAngleEnum.nullable(),
+    movement: ShotMovementEnum.nullable(),
     cameraNotes: t(),
     priority: ShotPriority,
     captured: z.boolean(),
@@ -334,6 +342,7 @@ const FIELD_NAMES: Record<string, string> = {
   notes: 'notes',
   cameraNotes: 'camera notes',
   thumbnailAttachmentId: 'thumbnail',
+  cutToNext: 'cut to next scene',
   description: 'description',
 };
 const fieldList = (fields: object) =>

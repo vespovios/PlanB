@@ -9,3 +9,6 @@ backups/
 test-results/
 playwright-report/
 .docker-smoke/
+
+# Licensed course material (personal copy; never commit or distribute)
+The Story Starter Kit Peter/
