@@ -1,58 +1,33 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { randomId } from '../../shared/ids';
-import { formatTime, sceneStarts, totalSeconds, type Scene } from '../../shared/model';
-import { useEpisodeSync, type SyncSnapshot, type EpisodeSync } from '../sync';
-import { TopBar } from '../components/TopBar';
-import { Disclosure, Segmented, TextField, Toast, useMediaQuery } from '../components/ui';
-import { href } from '../router';
+import { formatTime, sceneStarts, totalSeconds, type Episode, type Scene } from '../../shared/model';
+import type { SyncSnapshot, EpisodeSync } from '../sync';
+import { Segmented, useMediaQuery } from '../components/ui';
 import { Timeline } from '../planner/Timeline';
 import { Cards } from '../planner/Cards';
 import { SceneDetails } from '../planner/SceneDetails';
 import { ShotsPanel } from '../planner/Shots';
-import { EpisodeBrief } from '../planner/EpisodeBrief';
-import { HistoryDialog } from '../planner/History';
 
-type ToastState = { message: string; action?: { label: string; onClick: () => void } } | null;
+export type ToastState = { message: string; action?: { label: string; onClick: () => void } } | null;
 
-export function PlannerPage({ id }: { id: string }) {
-  const sync = useEpisodeSync(id);
-  const { episode, engine } = sync;
+interface PlanTabProps {
+  episode: Episode;
+  sync: SyncSnapshot & { engine: EpisodeSync };
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  setToast: (t: ToastState) => void;
+}
+
+/** The timeline/cards planner: scene details + shots above, sequence below (cards list on phones). */
+export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: PlanTabProps) {
+  const { engine } = sync;
   const mobile = useMediaQuery('(max-width: 760px)');
   const [view, setView] = useState<'timeline' | 'cards'>(() => (localStorage.getItem('planb:view') as 'cards') || 'timeline');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [toast, setToast] = useState<ToastState>(null);
-  const closeToast = useCallback(() => setToast(null), []);
 
   useEffect(() => localStorage.setItem('planb:view', view), [view]);
-  useEffect(() => {
-    if (episode) document.title = `${episode.title} · PlanB`;
-  }, [episode?.title]);
 
-  const scenes = episode?.scenes ?? [];
-  // Keep a valid selection when scenes are added, removed or replaced by a remote change.
-  useEffect(() => {
-    if (!episode) return;
-    if (!selectedId || !scenes.some((s) => s.id === selectedId)) setSelectedId(scenes[0]?.id ?? null);
-  }, [episode, selectedId]);
-
-  if (sync.loadError) {
-    return (
-      <div className="page">
-        <TopBar />
-        <main className="center">
-          <p className="error">{sync.loadError}</p>
-          <a className="btn" href={href.episodes()}>
-            Back to episodes
-          </a>
-        </main>
-      </div>
-    );
-  }
-  if (!episode) return <div className="boot">Loading episode…</div>;
-
+  const scenes = episode.scenes;
   const starts = sceneStarts(episode);
   const total = totalSeconds(episode);
   const selIndex = scenes.findIndex((s) => s.id === selectedId);
@@ -87,31 +62,6 @@ export function PlannerPage({ id }: { id: string }) {
       },
     });
   };
-  const download = async () => {
-    await engine.flush();
-    window.location.href = `/api/episodes/${episode.id}/export.zip`;
-  };
-  const setStatus = (status: 'draft' | 'ready') => {
-    engine.queue({ op: 'updateEpisode', fields: { status } });
-    if (status === 'ready') setToast({ message: 'Marked ready for filming. This version is kept in History; the plan stays editable.' });
-  };
-
-  const actions = (
-    <>
-      <a className="btn ghost" href={href.checklist(episode.id)}>
-        Filming checklist
-      </a>
-      <a className="btn ghost" href={href.document(episode.id)} title="Formatted plan to print or save as PDF">
-        Plan document
-      </a>
-      <button type="button" className="btn ghost" onClick={download} title="ZIP with plan.json, plan.md, images and editable storyboards, for handing the plan to other tools or people">
-        Download ZIP
-      </button>
-      <button type="button" className="btn ghost" onClick={() => setHistoryOpen(true)}>
-        History
-      </button>
-    </>
-  );
 
   const runtime = (
     <span className="runtime">
@@ -122,71 +72,14 @@ export function PlannerPage({ id }: { id: string }) {
     </span>
   );
 
-  const header = (
-    <section className="episode-card">
-      <div className="episode-card-main">
-        <p className="eyebrow">Episode outline · {episode.status === 'ready' ? 'Ready for filming' : 'Draft'}</p>
-        <TextField className="episode-title" ariaLabel="Episode title" required value={episode.title} onChange={(v) => engine.queue({ op: 'updateEpisode', fields: { title: v } }, 700)} onBlur={() => void engine.flush()} />
-        {episode.brief && !mobile && <p className="brief-line muted">{episode.brief}</p>}
-      </div>
-      <div className="episode-card-side">
-        <Segmented
-          ariaLabel="Episode status"
-          value={episode.status}
-          options={[
-            { value: 'draft', label: 'Draft' },
-            { value: 'ready', label: 'Ready for filming' },
-          ]}
-          onChange={setStatus}
-        />
-        {mobile && runtime}
-      </div>
-      <div className="episode-card-brief">
-        <Disclosure label="Brief, outline & notes" filled={!mobile && scenes.length === 0}>
-          <EpisodeBrief episode={episode} engine={engine} />
-        </Disclosure>
-      </div>
-    </section>
-  );
-
   return (
-    <div className={`page planner-page ${mobile ? 'is-mobile' : ''}`}>
-      <TopBar
-        crumb={
-          <>
-            <a href={href.episodes()}>Episodes</a> <span className="muted">/</span> <span className="crumb-title">{episode.title}</span>
-          </>
-        }
-      >
-        <SaveStatus sync={sync} />
-        {mobile ? (
-          <div className="menu-wrap">
-            <button type="button" className="btn ghost" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-              ⋯
-            </button>
-            {menuOpen && (
-              <div className="menu" role="menu" onClick={() => setMenuOpen(false)}>
-                {actions}
-                <a className="btn ghost" href={href.episodes()}>
-                  All episodes
-                </a>
-              </div>
-            )}
-          </div>
-        ) : (
-          actions
-        )}
-      </TopBar>
-
-      <Banners sync={sync} engine={engine} />
-
+    <>
       <main className={mobile ? 'planner mobile' : 'planner'}>
-        {header}
         {mobile ? (
           <section className="mobile-scenes">
             <div className="section-head">
               <h2>Scenes</h2>
-              <span className="muted small">Story order · tap a scene to edit</span>
+              {runtime}
             </div>
             <Cards scenes={scenes} selectedId={null} onSelect={select} onMove={moveScene} layout="list" />
             <button type="button" className="btn primary full add-scene-mobile" onClick={addScene}>
@@ -303,17 +196,7 @@ export function PlannerPage({ id }: { id: string }) {
           </div>
         </div>
       )}
-
-      {historyOpen && (
-        <HistoryDialog
-          episodeId={episode.id}
-          engine={engine}
-          onClose={() => setHistoryOpen(false)}
-          onRestored={(message) => setToast({ message })}
-        />
-      )}
-      {toast && <Toast onClose={closeToast} action={toast.action} timeout={toast.action ? 10_000 : 6000}>{toast.message}</Toast>}
-    </div>
+    </>
   );
 }
 
@@ -339,7 +222,7 @@ export function SaveStatus({ sync }: { sync: SyncSnapshot & { engine: EpisodeSyn
   );
 }
 
-function Banners({ sync, engine }: { sync: SyncSnapshot; engine: EpisodeSync }) {
+export function Banners({ sync, engine }: { sync: SyncSnapshot; engine: EpisodeSync }) {
   return (
     <>
       {sync.conflict && (

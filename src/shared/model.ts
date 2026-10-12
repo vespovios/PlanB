@@ -156,6 +156,11 @@ export interface EpisodeSummary {
   totalSeconds: number;
   targetSeconds: number | null;
   updatedAt: string;
+  /** For the episode switcher: first storyboard previews, and progress counts. */
+  coverAssetIds: string[];
+  shotCount: number;
+  capturedCount: number;
+  storyboardCount: number;
 }
 
 export interface RevisionInfo {

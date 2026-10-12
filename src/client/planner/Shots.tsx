@@ -86,7 +86,7 @@ export function ShotsPanel({ scene, engine, gear = [] }: { scene: Scene; engine:
   );
 }
 
-function ShotRow({ shot, index, count, scene, engine, gear }: { shot: Shot; index: number; count: number; scene: Scene; engine: EpisodeSync; gear: GearItem[] }) {
+export function ShotRow({ shot, index, count, scene, engine, gear }: { shot: Shot; index: number; count: number; scene: Scene; engine: EpisodeSync; gear: GearItem[] }) {
   const [notesOpen, setNotesOpen] = useState(!!shot.cameraNotes);
   const update = (fields: Partial<Shot>, debounce = 0) =>
     engine.queue({ op: 'updateShot', sceneId: scene.id, shotId: shot.id, fields }, debounce);

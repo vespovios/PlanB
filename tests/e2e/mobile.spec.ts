@@ -9,13 +9,13 @@ test('phone: outline, scene editing, timing, reorder and captured shots by touch
   await expect(page.locator('.timeline-track')).toHaveCount(0); // phones use the Cards list
   await expect(page.locator('.cards.list .card')).toHaveCount(4);
 
-  // Outline and loose notes are editable on the phone but collapsed by default.
-  await page.getByRole('button', { name: '+ Brief, outline & notes' }).tap();
-  await page.getByRole('button', { name: '+ Story outline' }).tap();
+  // Outline and loose notes are editable on the phone, one tap away under More.
+  await page.getByRole('button', { name: 'More' }).tap();
+  await page.getByRole('link', { name: 'Brief, outline & notes' }).tap();
   await page.getByLabel('Story outline').fill('Setup: early start\nQuestion: will the pass be open?');
-  await page.getByRole('button', { name: '+ Loose notes' }).tap();
   await page.getByRole('button', { name: 'Observed:' }).tap();
   await waitSaved(page);
+  await page.locator('.tabbar').getByRole('link', { name: 'Plan' }).tap();
 
   // Add a scene, edit it in the full-screen sheet.
   await page.getByRole('button', { name: '+ Scene' }).tap();
@@ -52,7 +52,7 @@ test('phone: outline, scene editing, timing, reorder and captured shots by touch
   expect(ep.notes).toMatch(/Observed: $/);
 
   // The filming checklist is quick to use on the phone.
-  await page.getByRole('button', { name: '⋯' }).tap();
+  await page.getByRole('button', { name: 'More' }).tap();
   await page.getByRole('link', { name: 'Filming checklist' }).tap();
   const first = page.locator('.checklist-shots input').first();
   await first.tap();

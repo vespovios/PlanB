@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type AgentToken, type User } from '../api';
-import { TopBar } from '../components/TopBar';
+import { Shell } from '../components/Shell';
 
 export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [tokens, setTokens] = useState<AgentToken[]>([]);
@@ -25,13 +25,10 @@ export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () =>
   const mcpUrl = urls.mcpUrl || `${location.origin}/mcp`;
 
   return (
+    <Shell user={user} onSignOut={onSignOut}>
     <div className="page">
-      <TopBar crumb={<span>Settings</span>}>
-        <button className="btn ghost" onClick={onSignOut}>
-          Sign out
-        </button>
-      </TopBar>
       <main className="settings">
+        <h1 className="page-title">Settings</h1>
         <section className="panel">
           <h2>Agent connections</h2>
           <p className="muted">
@@ -128,5 +125,6 @@ export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () =>
         </section>
       </main>
     </div>
+    </Shell>
   );
 }

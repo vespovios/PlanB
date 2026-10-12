@@ -70,7 +70,7 @@ test('timeline editing, reorder, resize and synchronised cards (acceptance 1–3
   const ctx2 = await browser.newContext();
   const page2 = await ctx2.newPage();
   await login(page2);
-  await page2.goto(`/#/e/${id}`);
+  await page2.goto(`/#/e/${id}/plan`);
   await expect.poll(() => titles(page2)).toEqual(['Packing for the ride', 'The road to the mountains', 'Loading the trailer', 'Fuel and coffee stop']);
   await ctx2.close();
 });
@@ -87,13 +87,13 @@ test('optional fields stay unobtrusive; outline starter never overwrites; delete
   await page.getByLabel('Scene title').fill('Arrival');
   await waitSaved(page);
 
-  if (await page.getByRole('button', { name: '+ Brief, outline & notes' }).isVisible()) await page.getByRole('button', { name: '+ Brief, outline & notes' }).click();
-  await page.getByRole('button', { name: '+ Story outline' }).click();
+  await page.locator('.ep-tabs').getByRole('link', { name: 'Notes' }).click();
   await page.getByRole('button', { name: /Insert starter/ }).click();
   await expect(page.getByLabel('Story outline')).toHaveValue(/Setup:\nDesire:\nConflict:\nChange:\nResult:/);
   await page.getByLabel('Story outline').fill('Setup: we leave at dawn\nResult: unknown until the trip');
   await expect(page.getByRole('button', { name: /Insert starter/ })).toHaveCount(0); // cannot overwrite existing text
   await waitSaved(page);
+  await page.locator('.ep-tabs').getByRole('link', { name: /^Plan/ }).click();
 
   // Add seven more scenes: the outline does not constrain scene count.
   for (let i = 0; i < 6; i++) await page.locator('.sequence-foot').getByRole('button', { name: '+ Scene' }).click();
@@ -253,7 +253,7 @@ test('references and storyboard: draw, save, reopen, alter, cancel (acceptance 1
   const phone = await browser.newContext({ ...devices['Pixel 7'] });
   const p2 = await phone.newPage();
   await login(p2);
-  await p2.goto(`/#/e/${id}`);
+  await p2.goto(`/#/e/${id}/plan`);
   await p2.locator('.cards .card-main').nth(1).tap();
   await expect(p2.getByRole('dialog').locator('.storyboard-preview img')).toHaveAttribute('src', new RegExp(sb.previewAssetId));
   await p2.getByRole('dialog').getByRole('button', { name: '✎ Edit drawing' }).tap();
@@ -331,22 +331,23 @@ test('production pack: cover, shot list with specs, storyboard, breakdown and gu
   expect(ep.scenes[0].cutToNext).toBe('jcut');
 
   // A five-line outline appears on the pack cover, linked to scenes.
-  await page.getByRole('button', { name: '+ Brief, outline & notes' }).click();
-  await page.getByRole('button', { name: '+ Story outline' }).click();
+  const tabs = page.locator('.ep-tabs');
+  await tabs.getByRole('link', { name: 'Notes' }).click();
   await page.getByLabel('Story outline').fill('Setup: two riders pack (S01–S02)\nDesire: reach the mountains\nConflict: a long road (S03)\nChange: coffee stop (S04)\nResult: open');
   await waitSaved(page);
   // Kit list: add two items, assign the camera to the first shot.
-  await page.getByRole('button', { name: '+ Kit list' }).click();
+  await tabs.getByRole('link', { name: /^Kit/ }).click();
   await page.getByLabel('New gear name').fill('Action camera');
   await page.getByRole('button', { name: '+ Gear' }).click();
   await page.getByLabel('New gear name').fill('Wireless mic');
   await page.getByLabel('New gear kind').selectOption('audio');
   await page.getByRole('button', { name: '+ Gear' }).click();
   await expect(page.locator('.kit-item')).toHaveCount(2);
+  await tabs.getByRole('link', { name: /^Plan/ }).click();
   await page.locator('.shot-gear').first().getByLabel('Add gear to shot').selectOption({ label: 'Action camera (Camera)' });
   await expect(page.locator('.shot-gear').first().locator('.gear-chip')).toHaveText(['Action camera ✕']);
   await waitSaved(page);
-  await page.getByRole('link', { name: 'Plan document' }).click();
+  await page.locator('.ep-actions').getByRole('link', { name: 'Production pack' }).click();
   await expect(page.locator('.pk-cover h1')).toHaveText('Printable plan');
   await expect(page.locator('.pk-kit-table tr')).toHaveCount(2);
   await expect(page.locator('.pk-kit-table').first()).toContainText('Used in 1A');
@@ -375,4 +376,42 @@ test('production pack: cover, shot list with specs, storyboard, breakdown and gu
   const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true });
   // Cover, shot list, storyboard, breakdown and guide each start a page.
   expect((pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBeGreaterThanOrEqual(5);
+});
+
+test('episode overview, shot list tab and storyboard board', async ({ page }) => {
+  await login(page);
+  const id = await createEpisode(page, 'Tabs test');
+  await page.goto(`/#/e/${id}`);
+  await expect(page.locator('.kpi').first()).toContainText('02:45');
+  await expect(page.locator('.running li')).toHaveCount(4);
+  // Opening a scene from the running order lands on it in the Plan tab.
+  await page.getByRole('button', { name: /Open S03/ }).click();
+  await expect(page).toHaveURL(new RegExp(`#/e/${id}/plan$`));
+  await expect(page.getByLabel('Scene title')).toHaveValue('The road to the mountains');
+
+  // Shots tab: same scene selected, tick a shot, filter, edit inline.
+  await page.locator('.ep-tabs').getByRole('link', { name: /^Shots/ }).click();
+  await expect(page.locator('.scene-head h2')).toHaveText('The road to the mountains');
+  await page.getByRole('button', { name: /S02 Loading/ }).click();
+  const rows = page.locator('.shot-table tbody tr:not(.editor-row)');
+  await expect(rows).toHaveCount(3);
+  await page.getByLabel(/Captured: Straps tightening/).check();
+  await expect(page.locator('.scene-pane-item.on')).toContainText('3 shots');
+  await page.getByRole('button', { name: /^Not captured/ }).click();
+  await expect(rows).toHaveCount(2);
+  await page.getByRole('button', { name: /^All/ }).click();
+  await rows.first().click();
+  await expect(page.locator('.editor-row')).toHaveCount(1);
+  await page.locator('.editor-row').getByLabel('Size').selectOption('cu');
+  await expect(rows.first().locator('.spec-chip').first()).toHaveText('CU');
+  await waitSaved(page);
+  const ep = (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode;
+  expect(ep.scenes[1].shots[0].size).toBe('cu');
+  expect(ep.scenes[1].shots.filter((s: { captured: boolean }) => s.captured)).toHaveLength(1);
+
+  // Storyboard board shows one frame per scene, each opening the drawing editor.
+  await page.locator('.ep-tabs').getByRole('link', { name: /^Storyboard/ }).click();
+  await expect(page.locator('.board-frame')).toHaveCount(4);
+  await page.getByRole('button', { name: /Draw storyboard for Fuel and coffee stop/ }).click();
+  await expect(page.locator('.sb-editor')).toBeVisible();
 });

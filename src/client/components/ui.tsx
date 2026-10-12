@@ -12,6 +12,8 @@ export function TextField(props: {
   onBlur?: () => void;
   label?: ReactNode;
   multiline?: boolean;
+  /** Single-line value shown wrapped over as many lines as it needs (no line breaks can be typed). */
+  wrap?: boolean;
   rows?: number;
   placeholder?: string;
   required?: boolean;
@@ -40,27 +42,69 @@ export function TextField(props: {
       props.onBlur?.();
     },
     onChange: (e: { target: { value: string } }) => {
-      setDraft(e.target.value);
-      if (props.required && !e.target.value.trim()) return;
-      if (e.target.value !== props.value) props.onChange(e.target.value);
+      const value = props.wrap ? e.target.value.replace(/\s*[\r\n]+\s*/g, ' ') : e.target.value;
+      setDraft(value);
+      if (props.required && !value.trim()) return;
+      if (value !== props.value) props.onChange(value);
     },
   };
   return (
     <div className={`field ${props.className ?? ''}`}>
       {props.label && <label htmlFor={id}>{props.label}</label>}
-      {props.multiline ? <AutoTextarea {...common} rows={props.rows ?? 2} /> : <input type="text" {...common} />}
+      {props.wrap ? (
+        <AutoTextarea
+          {...common}
+          rows={1}
+          shrinkTo={15}
+          className="wrap-field"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+          }}
+        />
+      ) : props.multiline ? (
+        <AutoTextarea {...common} rows={props.rows ?? 2} />
+      ) : (
+        <input type="text" {...common} />
+      )}
     </div>
   );
 }
 
-function AutoTextarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+/**
+ * Textarea that grows with its content. With `shrinkTo`, the font first shrinks (down to that
+ * many pixels) so the text fits on one line; only longer text wraps.
+ */
+function AutoTextarea({ shrinkTo, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { shrinkTo?: number }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight + 2, 480)}px`;
-  }, [props.value]);
+    const fit = () => {
+      const el = ref.current;
+      if (!el) return;
+      if (shrinkTo) {
+        el.style.fontSize = '';
+        el.style.height = 'auto';
+        const style = getComputedStyle(el);
+        const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+        const lineRatio = parseFloat(style.lineHeight) / parseFloat(style.fontSize) || 1.25;
+        let size = parseFloat(style.fontSize);
+        // Step down until the text sits on one line (or the minimum size is reached).
+        while (size > shrinkTo && el.scrollHeight > size * lineRatio * 1.5 + padding) {
+          size = Math.max(shrinkTo, size - 0.5);
+          el.style.fontSize = `${size}px`;
+        }
+      }
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight + 2, 480)}px`;
+    };
+    fit();
+    void document.fonts?.ready.then(fit);
+    // Re-fit when the width changes (window resize, phone rotation).
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [props.value, shrinkTo]);
   return <textarea ref={ref} {...props} />;
 }
 

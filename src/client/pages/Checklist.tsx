@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { buildChecklist } from '../../shared/checklist';
 import { capturedCount, formatTime, totalSeconds } from '../../shared/model';
-import { assetUrl } from '../api';
+import { assetUrl, type User } from '../api';
+import { Shell } from '../components/Shell';
 import { useEpisodeSync } from '../sync';
 import { TopBar } from '../components/TopBar';
 import { Logo } from '../components/ui';
@@ -9,7 +10,7 @@ import { href } from '../router';
 import { SaveStatus } from './Planner';
 
 /** Filming checklist: derived from the same scenes and shots, readable on a phone and printable. */
-export function ChecklistPage({ id }: { id: string }) {
+export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User; onSignOut: () => void }) {
   const sync = useEpisodeSync(id);
   const { episode, engine } = sync;
   const [byLocation, setByLocation] = useState(false);
@@ -23,6 +24,7 @@ export function ChecklistPage({ id }: { id: string }) {
   const allShots = episode.scenes.flatMap((s) => s.shots);
 
   return (
+    <Shell user={user} onSignOut={onSignOut} episodeId={id} tab="checklist">
     <div className="page checklist-page">
       <TopBar
         crumb={
@@ -156,5 +158,6 @@ export function ChecklistPage({ id }: { id: string }) {
         {!episode.scenes.length && <p className="muted">No scenes yet.</p>}
       </main>
     </div>
+    </Shell>
   );
 }

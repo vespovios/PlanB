@@ -12,16 +12,20 @@ export async function login(page: Page, who = CREATOR) {
   await page.fill('#email', who.email);
   await page.fill('#password', who.password);
   await page.click('button:has-text("Sign in")');
-  await expect(page.getByRole('heading', { name: 'Episodes' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Episodes', level: 1 })).toBeVisible();
 }
 
 export async function createEpisode(page: Page, title: string, example = true) {
-  await page.getByRole('button', { name: '+ New episode' }).click();
+  await page.getByRole('button', { name: 'New episode' }).click();
   await page.fill('#new-title', title);
   if (example) await page.getByText('Start with the example opening sequence').click();
   await page.getByRole('button', { name: 'Create' }).click();
   await expect(page.getByLabel('Episode title')).toHaveValue(title);
-  return page.url().split('/e/')[1];
+  const id = page.url().split('/e/')[1].split('/')[0];
+  // Planning tests start on the Plan tab (timeline on desktop, cards on phones).
+  await page.goto(`/#/e/${id}/plan`);
+  await expect(page.getByLabel('Episode title')).toHaveValue(title);
+  return id;
 }
 
 export async function waitSaved(page: Page) {

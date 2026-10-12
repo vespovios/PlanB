@@ -86,6 +86,10 @@ export class Episodes {
         totalSeconds: totalSeconds(doc),
         targetSeconds: doc.targetSeconds,
         updatedAt: r.updated_at,
+        coverAssetIds: doc.scenes.flatMap((s) => (s.storyboard ? [s.storyboard.previewAssetId] : [])).slice(0, 6),
+        shotCount: doc.scenes.reduce((n, s) => n + s.shots.length, 0),
+        capturedCount: doc.scenes.reduce((n, s) => n + s.shots.filter((x) => x.captured).length, 0),
+        storyboardCount: doc.scenes.filter((s) => s.storyboard).length,
       };
     });
   }

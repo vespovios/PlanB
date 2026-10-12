@@ -3,7 +3,7 @@ import { api, type User } from './api';
 import { useRoute } from './router';
 import { LoginPage } from './pages/Login';
 import { EpisodesPage } from './pages/Episodes';
-import { PlannerPage } from './pages/Planner';
+import { EpisodePage } from './pages/Episode';
 import { ChecklistPage } from './pages/Checklist';
 import { PlanDocumentPage } from './pages/PlanDocument';
 import { SettingsPage } from './pages/Settings';
@@ -35,12 +35,12 @@ export function App() {
   };
 
   switch (route.name) {
-    case 'planner':
-      return <PlannerPage key={route.id} id={route.id} />;
+    case 'episode':
+      return <EpisodePage key={route.id} id={route.id} tab={route.tab} user={user} onSignOut={signOut} />;
     case 'checklist':
-      return <ChecklistPage key={route.id} id={route.id} />;
+      return <ChecklistPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
     case 'document':
-      return <PlanDocumentPage key={route.id} id={route.id} />;
+      return <PlanDocumentPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
     case 'settings':
       return <SettingsPage user={user} onSignOut={signOut} />;
     default:

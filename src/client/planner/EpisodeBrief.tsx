@@ -3,12 +3,11 @@ import { formatTime, parseTime, type Episode } from '../../shared/model';
 import { STORY_STARTER } from '../../shared/ops';
 import type { EpisodeSync } from '../sync';
 import { Disclosure, TextField } from '../components/ui';
-import { KitList } from './KitList';
 
 const TEXT_DEBOUNCE = 700;
 
 /** Brief, optional story outline and loose notes. Collapsible so the checklist stays quick to use. */
-export function EpisodeBrief({ episode, engine }: { episode: Episode; engine: EpisodeSync }) {
+export function EpisodeBrief({ episode, engine, expanded = false }: { episode: Episode; engine: EpisodeSync; expanded?: boolean }) {
   const set = (fields: Partial<Episode>, debounce = TEXT_DEBOUNCE) => engine.queue({ op: 'updateEpisode', fields: fields as never }, debounce);
   const flush = () => void engine.flush();
   const [target, setTarget] = useState(episode.targetSeconds ? formatTime(episode.targetSeconds) : '');
@@ -45,7 +44,7 @@ export function EpisodeBrief({ episode, engine }: { episode: Episode; engine: Ep
           }}
         />
       </div>
-      <Disclosure label="Story outline" filled={!!episode.outline} hint="Optional thinking aid">
+      <Disclosure label="Story outline" filled={!!episode.outline} defaultOpen={expanded || !!episode.outline} hint="Optional thinking aid">
         <p className="muted small">
           Optional. Write freely, or use the five-beat starter as prompts: rename, skip or delete any of them. A beat can span several scenes; the outline never changes
           your timeline.
@@ -65,10 +64,7 @@ export function EpisodeBrief({ episode, engine }: { episode: Episode; engine: Ep
           </button>
         )}
       </Disclosure>
-      <Disclosure label="Kit list" filled={(episode.gear ?? []).length > 0} count={(episode.gear ?? []).length} hint="Cameras, mounts, mics and power you are taking">
-        <KitList episode={episode} engine={engine} />
-      </Disclosure>
-      <Disclosure label="Loose notes" filled={!!episode.notes} hint="Ideas, observations from filming, open questions">
+      <Disclosure label="Loose notes" filled={!!episode.notes} defaultOpen={expanded || !!episode.notes} hint="Ideas, observations from filming, open questions">
         <TextField
           multiline
           rows={4}

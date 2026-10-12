@@ -8,7 +8,8 @@ import { parseFiveLines } from '../../shared/outline';
 import { GEAR_KINDS, capturedCount, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode, type GearItem, type ImageAttachment, type Scene } from '../../shared/model';
 import { GEAR_KIND_LABELS } from '../planner/KitList';
 import { CUT_TYPES, PACING, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term, type Term } from '../../shared/vocab';
-import { assetUrl } from '../api';
+import { assetUrl, type User } from '../api';
+import { Shell } from '../components/Shell';
 import { useEpisodeSync } from '../sync';
 import { TopBar } from '../components/TopBar';
 import { Logo } from '../components/ui';
@@ -52,7 +53,7 @@ function sceneColours(episode: Episode) {
   return { of: (scene: Scene) => map.get(scene.id) ?? NO_LOCATION };
 }
 
-export function PlanDocumentPage({ id }: { id: string }) {
+export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: User; onSignOut: () => void }) {
   const { episode, loadError } = useEpisodeSync(id);
   const [on, setOn] = useState<Record<Section, boolean>>({ cover: true, kit: true, story: true, shots: true, board: true, breakdown: true, guides: true, notes: false });
   const [byLocation, setByLocation] = useState(false);
@@ -74,6 +75,7 @@ export function PlanDocumentPage({ id }: { id: string }) {
   const footer = `${episode.title} · PlanB revision ${episode.revision}`;
 
   return (
+    <Shell user={user} onSignOut={onSignOut} episodeId={id} tab="document">
     <div className="page plan-doc-page">
       {/* Running footer with page numbers on every printed page. */}
       <style>{`@page { size: A4; margin: 12mm 12mm 15mm; @bottom-left { content: ${cssString(footer)}; font: 7.5pt system-ui, sans-serif; color: #7a8394; } @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 7.5pt system-ui, sans-serif; color: #7a8394; } }`}</style>
@@ -187,6 +189,7 @@ export function PlanDocumentPage({ id }: { id: string }) {
         )}
       </article>
     </div>
+    </Shell>
   );
 }
 
