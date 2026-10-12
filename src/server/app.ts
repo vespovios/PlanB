@@ -308,8 +308,15 @@ export async function buildApp(config: Config, services = createServices(config)
   // --- Web client ---------------------------------------------------------------------
 
   if (config.staticDir && fs.existsSync(config.staticDir)) {
-    await app.register(fastifyStatic, { root: config.staticDir, index: 'index.html', wildcard: true });
-    const indexHtml = fs.readFileSync(path.join(config.staticDir, 'index.html'));
+    await app.register(fastifyStatic, { root: config.staticDir, index: false, wildcard: true });
+    // Link-preview tags need absolute URLs, so the page carries this install's public address.
+    const indexHtml = fs
+      .readFileSync(path.join(config.staticDir, 'index.html'), 'utf8')
+      .replaceAll('__PLANB_PUBLIC_URL__', config.publicUrl);
+    const sendIndex = (_req: FastifyRequest, reply: FastifyReply) =>
+      reply.type('text/html').header('Cache-Control', 'no-cache').send(indexHtml);
+    app.get('/', sendIndex);
+    app.get('/index.html', sendIndex);
     app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/api/') || req.url.startsWith('/mcp')) return reply.status(404).send({ error: 'Not found' });
       return reply.type('text/html').header('Cache-Control', 'no-cache').send(indexHtml);
