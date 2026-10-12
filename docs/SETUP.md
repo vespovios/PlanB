@@ -64,11 +64,11 @@ No provider or domain is chosen yet. These steps work on any Linux VPS with Dock
    Caddy obtains the HTTPS certificate automatically on the first request to the domain.
 5. **Create your account** (you'll be prompted for a password of at least 10 characters):
    ```bash
-   docker compose exec planb node dist/server/cli.js user:add --email you@example.com --name "Your Name"
+   docker compose exec planb node dist/server/cli.js user:add --email you@example.com --name "Your Name"   # a name is required
    ```
 6. Open `https://planb.example.com` and sign in.
 
-Other admin commands: `user:list`, `user:password --email …` (resets a password and signs out that user's sessions), `token:create --email … --label …`, `verify`, and `purge-deleted --days 30` (permanently removes episodes deleted in the browser).
+Other admin commands: `user:list`, `user:password --email …` (resets a password and signs out that user's sessions), `user:email --email old --new-email new` (changes the sign-in e-mail; everything else stays), `user:name --email … --name "…"` (PlanB shows people by name, never by e-mail), `token:create --email … --label …`, `verify`, and `purge-deleted --days 30` (permanently removes episodes deleted in the browser).
 
 ### Security notes
 

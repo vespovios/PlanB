@@ -63,10 +63,9 @@ export class Auth {
 
   async createUser(email: string, name: string, password: string): Promise<User> {
     if (password.length < MIN_PASSWORD_LENGTH) throw new HttpError(400, `Passwords need at least ${MIN_PASSWORD_LENGTH} characters`);
-    const normalised = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+$/.test(normalised)) throw new HttpError(400, 'Enter a valid e-mail address');
-    const exists = this.db.prepare('SELECT 1 FROM users WHERE email = ?').get(normalised);
-    if (exists) throw new HttpError(409, 'An account with that e-mail already exists');
+    // People are shown by name everywhere in PlanB; the e-mail is only the sign-in.
+    if (!name.trim()) throw new HttpError(400, 'Enter a name');
+    const normalised = this.checkNewEmail(email);
     const user = { id: randomId('us'), email: normalised, name: name.trim() };
     this.db
       .prepare('INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
@@ -79,6 +78,26 @@ export class Auth {
     this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await hashPassword(password), userId);
     // Changing a password signs out every other browser session.
     this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  }
+
+  /** Changes the sign-in e-mail. Sessions, tokens and episodes stay with the account. */
+  setEmail(userId: string, email: string): string {
+    const normalised = this.checkNewEmail(email, userId);
+    this.db.prepare('UPDATE users SET email = ? WHERE id = ?').run(normalised, userId);
+    return normalised;
+  }
+
+  setName(userId: string, name: string) {
+    if (!name.trim()) throw new HttpError(400, 'Enter a name');
+    this.db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name.trim(), userId);
+  }
+
+  private checkNewEmail(email: string, exceptUserId?: string): string {
+    const normalised = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+$/.test(normalised)) throw new HttpError(400, 'Enter a valid e-mail address');
+    const exists = this.db.prepare('SELECT id FROM users WHERE email = ?').get(normalised) as { id: string } | undefined;
+    if (exists && exists.id !== exceptUserId) throw new HttpError(409, 'An account with that e-mail already exists');
+    return normalised;
   }
 
   listUsers(): (User & { created_at: string })[] {

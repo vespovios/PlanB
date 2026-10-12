@@ -97,7 +97,7 @@ export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () =>
 
         <section className="panel">
           <h2>Password</h2>
-          <p className="muted small">Signed in as {user.email}. Changing your password signs out your other devices.</p>
+          <p className="muted small">Signed in as {user.name || user.email}. Changing your password signs out your other devices.</p>
           <form
             className="stack"
             onSubmit={async (e) => {

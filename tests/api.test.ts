@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneStarts, totalSeconds, type Episode } from '../src/shared/model.js';
-import { asAgent, asUser, multipartBody, samplePng, setup, startApp, login, type TestCtx } from './helpers.js';
+import { asAgent, asUser, multipartBody, PASSWORD, samplePng, setup, startApp, login, type TestCtx } from './helpers.js';
 
 let ctx: TestCtx;
 beforeAll(async () => {
@@ -54,9 +54,24 @@ describe('authentication', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: asAgent(token) })).statusCode).toBe(401);
   });
 
+  it('accounts need a name; the sign-in e-mail can change without losing anything', async () => {
+    const { auth } = ctx.app.services;
+    await expect(auth.createUser('noname@example.com', '  ', 'correct horse battery')).rejects.toThrow('Enter a name');
+    const before = await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: asUser(ctx.cookieA) });
+    const alice = auth.findUserByEmail('alice@example.com')!;
+    expect(() => auth.setEmail(alice.id, 'BOB@example.com')).toThrow('already exists');
+    expect(auth.setEmail(alice.id, ' Alice.New@Example.com ')).toBe('alice.new@example.com');
+    expect(await auth.checkCredentials('alice@example.com', PASSWORD)).toBeNull();
+    expect((await auth.checkCredentials('alice.new@example.com', PASSWORD))?.name).toBe('Alice');
+    // Existing sessions and episodes stay with the account.
+    const after = await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: asUser(ctx.cookieA) });
+    expect(after.json()).toEqual(before.json());
+    auth.setEmail(alice.id, 'alice@example.com');
+  });
+
   it('throttles repeated failed logins', async () => {
     const { app } = await startApp();
-    await app.services.auth.createUser('carol@example.com', '', 'correct horse battery');
+    await app.services.auth.createUser('carol@example.com', 'Carol', 'correct horse battery');
     let last = 0;
     for (let i = 0; i < 12; i++) {
       const email = ' '.repeat(i % 3) + 'carol@example.com' + ' '.repeat(i % 2); // padding must not reset the limit

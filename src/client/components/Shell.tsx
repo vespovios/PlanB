@@ -81,8 +81,8 @@ function Rail({ user, onSignOut, episodeId, tab }: ShellProps) {
         {menu && (
           <div className="rail-menu" role="menu">
             <div className="rail-menu-head">
-              <b>{user.name || 'Signed in'}</b>
-              <span className="muted small">{user.email}</span>
+              <span className="muted small">Signed in as</span>
+              <b>{user.name || 'you'}</b>
             </div>
             <a className="btn ghost" href={href.settings()}>
               <Icon name="gear" /> Settings

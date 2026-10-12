@@ -29,9 +29,11 @@ const str = (k: string) => (typeof args[k] === 'string' ? (args[k] as string) : 
 function usage(): never {
   console.log(`PlanB admin
 
-  user:add --email you@example.com [--name "Your Name"] [--password-stdin]
+  user:add --email you@example.com --name "Your Name" [--password-stdin]
   user:list
   user:password --email you@example.com [--password-stdin]
+  user:email --email old@example.com --new-email new@example.com   change the sign-in e-mail
+  user:name --email you@example.com --name "Your Name"             change the name shown in PlanB
   token:create --email you@example.com --label "Claude"      prints a new agent token once
   backup --out backups/planb-YYYYMMDD.tar.gz                  online backup of database + assets
   restore --from backups/file.tar.gz [--yes]                  stop the app first
@@ -75,10 +77,11 @@ async function main() {
   switch (command) {
     case 'user:add': {
       const email = str('email') ?? usage();
+      const name = str('name') ?? usage();
       const auth = new Auth(openDatabase(config.dataDir), config.sessionDays);
       const password = await readPassword('Password (min 10 characters): ');
-      const user = await auth.createUser(email, str('name') ?? '', password);
-      console.log(`Created ${user.email} (${user.id})`);
+      const user = await auth.createUser(email, name, password);
+      console.log(`Created ${user.name} <${user.email}> (${user.id})`);
       break;
     }
     case 'user:list': {
@@ -92,6 +95,22 @@ async function main() {
       if (!user) throw new Error('No such user');
       await auth.setPassword(user.id, await readPassword('New password (min 10 characters): '));
       console.log('Password changed; existing browser sessions were signed out.');
+      break;
+    }
+    case 'user:email': {
+      const auth = new Auth(openDatabase(config.dataDir), config.sessionDays);
+      const user = auth.findUserByEmail(str('email') ?? usage());
+      if (!user) throw new Error('No such user');
+      const email = auth.setEmail(user.id, str('new-email') ?? usage());
+      console.log(`${user.name} now signs in as ${email}.`);
+      break;
+    }
+    case 'user:name': {
+      const auth = new Auth(openDatabase(config.dataDir), config.sessionDays);
+      const user = auth.findUserByEmail(str('email') ?? usage());
+      if (!user) throw new Error('No such user');
+      auth.setName(user.id, str('name') ?? usage());
+      console.log(`Name changed to ${str('name')!.trim()}.`);
       break;
     }
     case 'token:create': {
