@@ -49,6 +49,8 @@ describe('filming order', () => {
     expect(md).toContain('## No filming day set');
     expect(md.indexOf('S02 Ferry')).toBeLessThan(md.indexOf('S01 Cold open'));
     expect(md).toContain('filming: Day 1 · stop 5');
+    expect(md).toContain('edit position 00:00–00:30 · 00:30 on screen');
+    expect(checklistMarkdown(doc)).not.toContain('edit position');
   });
 
   it('is set per scene with updateScene and validated', () => {

@@ -436,6 +436,7 @@ test('kit counts open the matching shots; timeline folds away; filming order in 
   await expect(page.locator('.scene-head h2')).toHaveText('The road to the mountains');
   await expect(page.locator('.shot-table tbody tr:not(.editor-row)')).toHaveCount(1);
   await expect(page.locator('.scene-pane-item.no-match')).toHaveCount(3);
+  await expect(page.locator('.filter-result')).toContainText(/Showing 1 of \d+ shots · with Chest mount/);
 
   // The timeline folds away and stays folded after a reload.
   await tabs.getByRole('link', { name: /^Plan/ }).click();
@@ -457,4 +458,5 @@ test('kit counts open the matching shots; timeline folds away; filming order in 
   await expect(page.locator('.group-title')).toHaveText(['🎬 Day 1', '🎬 No filming day set']);
   await expect(page.locator('.checklist-scene').first()).toContainText('Fuel and coffee stop');
   await expect(page.locator('.checklist-scene').first()).toContainText('Day 1 · stop 1');
+  await expect(page.locator('.checklist-scene').first()).toContainText('Edit position 02:15–02:45 · 00:30 on screen');
 });

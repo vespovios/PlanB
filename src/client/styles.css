@@ -4617,3 +4617,15 @@ button.kit-usage {
   background: none;
   overflow: visible;
 }
+.filter-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #5c6575;
+  font-size: 0.82rem;
+}
+.filter-select.on {
+  border-color: #2f4f8f;
+  background: #e8f0fd;
+  color: #2f4f8f;
+}

@@ -72,7 +72,7 @@ export function checklistMarkdown(doc: EpisodeDoc, order: ChecklistOrder = 'stor
       const slot = filmSlot(scene);
       lines.push(
         `${grouped ? '###' : '##'} ${number} ${scene.title} (${scene.id})`,
-        `${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)} · planning status: ${scene.status} · captured ${captured}/${total}${slot ? ` · filming: ${slot}` : ''}`,
+        `${order === 'filming' ? 'edit position ' : ''}${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}${order === 'filming' ? ' on screen' : ''} · planning status: ${scene.status} · captured ${captured}/${total}${slot ? ` · filming: ${slot}` : ''}`,
       );
       if (scene.location && order !== 'location') lines.push(`Location: ${scene.location}`);
       if (scene.purpose) lines.push(`Purpose: ${scene.purpose}`);

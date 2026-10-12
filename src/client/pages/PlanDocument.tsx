@@ -136,7 +136,16 @@ export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: Us
                 {order === 'location' && <h3 className="pk-group-title">📍 {group.label ?? 'No location given'}</h3>}
                 {order === 'filming' && <h3 className="pk-group-title">🎬 {group.label ?? 'No filming day set'}</h3>}
                 {group.scenes.map(({ scene, index, start }) => (
-                  <ShotTable key={scene.id} scene={scene} index={index} start={start} colour={colours.of(scene)} cols={cols} gearById={gearById} />
+                  <ShotTable
+                    key={scene.id}
+                    scene={scene}
+                    index={index}
+                    start={start}
+                    colour={colours.of(scene)}
+                    cols={cols}
+                    gearById={gearById}
+                    editLabels={order === 'filming'}
+                  />
                 ))}
               </div>
             ))}
@@ -351,7 +360,24 @@ interface SpecColumns {
   gear: boolean;
 }
 
-function ShotTable({ scene, index, start, colour, cols, gearById }: { scene: Scene; index: number; start: number; colour: string; cols: SpecColumns; gearById: Map<string, GearItem> }) {
+function ShotTable({
+  scene,
+  index,
+  start,
+  colour,
+  cols,
+  gearById,
+  editLabels,
+}: {
+  scene: Scene;
+  index: number;
+  start: number;
+  colour: string;
+  cols: SpecColumns;
+  gearById: Map<string, GearItem>;
+  /** Filming order: say plainly that times are positions in the edit, not clock times. */
+  editLabels?: boolean;
+}) {
   const sceneGear = [...new Set(scene.shots.flatMap((sh) => sh.gear ?? []))].map((id) => gearById.get(id)?.name).filter(Boolean);
   const c = capturedCount(scene);
   return (
@@ -360,7 +386,9 @@ function ShotTable({ scene, index, start, colour, cols, gearById }: { scene: Sce
         <span className="pk-banner-num">{sceneNumber(index)}</span>
         <span className="pk-banner-title">{scene.title}</span>
         <span className="pk-banner-meta">
-          {formatTime(start)}–{formatTime(start + scene.durationSeconds)} · {formatTime(scene.durationSeconds)}
+          {editLabels
+            ? `Edit position ${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)} on screen`
+            : `${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}`}
         </span>
         <span className="pk-banner-count">
           ☐ {c.captured}/{c.total}

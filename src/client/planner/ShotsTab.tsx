@@ -108,7 +108,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
         </button>
       ))}
       {gear.length > 0 && (
-        <select className="filter-select" aria-label="Filter by gear" value={gearFilter} onChange={(e) => setGearFilter(e.target.value)}>
+        <select className={`filter-select ${gearFilter ? 'on' : ''}`} aria-label="Filter by gear" value={gearFilter} onChange={(e) => setGearFilter(e.target.value)}>
           <option value="">All gear</option>
           {gear.map((g) => (
             <option key={g.id} value={g.id}>
@@ -116,6 +116,23 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
             </option>
           ))}
         </select>
+      )}
+      {/* Explain a short list when filters hide shots, e.g. "All 5" showing one row. */}
+      {visible.length !== scene.shots.length && (
+        <span className="filter-result" role="status">
+          Showing {visible.length} of {scene.shots.length} shot{scene.shots.length === 1 ? '' : 's'}
+          {gearFilter && <> · with {gearName.get(gearFilter)}</>}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => {
+              setFilter('all');
+              setGearFilter('');
+            }}
+          >
+            Show all
+          </button>
+        </span>
       )}
     </div>
   );

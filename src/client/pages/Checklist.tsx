@@ -90,7 +90,10 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
                       <span className="scene-num">{number}</span> {scene.title}
                     </h3>
                     <span className="muted small">
-                      {formatTime(start)}–{formatTime(start + scene.durationSeconds)} · {formatTime(scene.durationSeconds)} ·{' '}
+                      {order === 'filming'
+                        ? `Edit position ${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)} on screen`
+                        : `${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}`}{' '}
+                      ·{' '}
                       {scene.status === 'ready' ? 'Ready to film' : 'Draft'} · {captured}/{total} captured
                       {filmSlot(scene) && <> · <b>{filmSlot(scene)}</b></>} · <code>{scene.id}</code>
                     </span>
