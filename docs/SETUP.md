@@ -190,7 +190,7 @@ Each archive contains `manifest.json`, `planb.db` (with full revision history fo
 
 Suggested schedule: a daily cron job on the host running the backup command, plus an off-site copy of `backups/` (for example with `rclone` or your provider's snapshots). Test a restore occasionally with `scripts/docker-smoke.sh`, or by restoring into a scratch directory.
 
-Without Docker: `PLANB_DATA_DIR=/srv/planb/data node dist/server/cli.js backup --out …`, with the same `restore` command. The [nginx install](#vps-deployment-without-docker-behind-an-existing-nginx) already has a nightly backup timer. To run one now, use `sudo systemctl start planb-backup.service`. Archives land in `/var/backups/planb/`, on the same disk, so copy them off the server too.
+Without Docker: `PLANB_DATA_DIR=/srv/planb/data node dist/server/cli.js backup --out …`, with the same `restore` command. The [nginx install](#vps-deployment-without-docker-behind-an-existing-nginx) already has a nightly backup timer. To run one now, use `sudo systemctl start planb-backup.service`. Archives land in `/var/backups/planb/`, on the same disk, so copy them off the server too. `scripts/pull-backup.sh [ssh-host]` does this on demand: it takes a fresh backup on the server, copies it to `backups/vps/` on your computer (git-ignored) and checks the archive.
 
 ## Upgrades
 
