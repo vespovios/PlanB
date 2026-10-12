@@ -4629,3 +4629,205 @@ button.kit-usage {
   background: #e8f0fd;
   color: #2f4f8f;
 }
+
+/* ---- Shot outcome: open ○ / filmed ✓ / skipped ✕ ---- */
+.outcome {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid #dfe2e7;
+  border-radius: 9px;
+  background: #f5f6f8;
+}
+.outcome button {
+  display: inline-grid;
+  place-items: center;
+  grid-auto-flow: column;
+  gap: 5px;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #9aa3b2;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.outcome button:hover {
+  background: #fff;
+  color: #3b4250;
+}
+.outcome .outcome-open.on {
+  background: #fff;
+  color: #3b4250;
+  box-shadow: 0 1px 2px rgba(20, 30, 50, 0.12);
+}
+.outcome .outcome-filmed.on {
+  background: var(--green, #2e9e57);
+  color: #fff;
+}
+.outcome .outcome-skipped.on {
+  background: #6b7280;
+  color: #fff;
+}
+.outcome.lg button {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 12px;
+  font-size: 1.05rem;
+}
+.outcome-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.skip-reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 0.8rem;
+}
+.skip-tag {
+  color: #4a5263;
+  font-weight: 600;
+}
+.reason-chip {
+  padding: 2px 9px;
+  border: 1px solid #dfe2e7;
+  border-radius: 99px;
+  background: #fff;
+  color: #3b4250;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.reason-chip:hover,
+.reason-chip.on {
+  border-color: #6b7280;
+  background: #f2f4f7;
+}
+.reason-other input {
+  width: 130px;
+  min-height: 0;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+}
+.journal-refs {
+  display: block;
+  margin-top: 4px;
+  color: #5c6575;
+  font-size: 0.78rem;
+}
+/* Skipped shots read as resolved but clearly not filmed. */
+.is-skipped .shot-desc-text,
+.is-skipped .shot-card-desc,
+.checklist-shots .is-skipped .shot-text > :not(.skip-reason):not(.journal-refs) {
+  color: #8b93a1;
+  text-decoration: line-through;
+  text-decoration-color: rgba(0, 0, 0, 0.3);
+}
+.is-filmed .shot-desc-text,
+.is-filmed .shot-card-desc {
+  color: #5c6575;
+}
+
+/* planner shot rows: control stacks vertically in the narrow column */
+.shot-check .outcome {
+  flex-direction: column;
+}
+.shot.is-filmed .shot-framing input {
+  color: var(--ready);
+}
+
+/* checklist rows */
+.checklist-shots li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 0;
+}
+.checklist-shots .is-filmed .shot-text {
+  color: var(--muted);
+}
+
+/* phone shot cards: outcome row under the text */
+.shot-card {
+  grid-template-columns: 1fr;
+}
+.shot-card-body {
+  padding: 12px 14px 6px;
+}
+.shot-card-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 12px;
+}
+.shot-card.is-filmed {
+  background: #f6fbf7;
+}
+.shot-card.is-skipped {
+  background: #f7f7f8;
+}
+
+/* production pack box */
+.pk-box.skipped {
+  color: #6b7280;
+}
+.pk-skipped {
+  display: block;
+  color: #6b7280;
+  font-size: 0.85em;
+  font-style: italic;
+}
+
+@media print {
+  .checklist-shots .outcome {
+    display: none;
+  }
+  .checklist-shots li {
+    padding: 4px 0;
+  }
+  .checklist-shots .is-skipped .shot-text > :not(.skip-reason) {
+    color: #000;
+  }
+  .reason-chip,
+  .reason-other,
+  .skip-reason .link-btn {
+    display: none;
+  }
+}
+/* Outcome colours: open amber, filmed green, skipped red (unselected stays neutral). */
+.outcome .outcome-open.on {
+  background: #e08a2e;
+  color: #fff;
+  box-shadow: none;
+}
+.outcome .outcome-filmed.on {
+  background: #2e9e57;
+  color: #fff;
+}
+.outcome .outcome-skipped.on {
+  background: #d4504f;
+  color: #fff;
+}
+.shot-card.is-skipped {
+  background: #fdf5f5;
+}
+.skip-tag {
+  color: #b23b3a;
+}
+.reason-chip.on,
+.reason-chip:hover {
+  border-color: #d4504f;
+  background: #fdf0f0;
+}
+.pk-box.skipped,
+.pk-skipped {
+  color: #b23b3a;
+}

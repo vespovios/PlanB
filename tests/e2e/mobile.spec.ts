@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { apiAsAgent, createEpisode, gesture, login, samplePngFile, waitSaved } from './helpers';
+import { apiAsAgent, createEpisode, gesture, login, outcome, samplePngFile, waitSaved } from './helpers';
 
 const cardTitles = (page: import('@playwright/test').Page) => page.locator('.cards .card-title').allTextContents();
 
@@ -27,8 +27,8 @@ test('phone: outline, scene editing, timing, reorder and captured shots by touch
   await expect(sheet.getByLabel('Seconds')).toHaveValue('32');
   await sheet.getByLabel('New shot description').fill('Wide of the road climbing the pass');
   await sheet.getByRole('button', { name: '+ Shot' }).tap();
-  await sheet.getByLabel(/Captured: Wide of the road/).tap();
-  await expect(sheet.getByLabel(/Captured: Wide of the road/)).toBeChecked();
+  await outcome(sheet, /Wide of the road/, 'Filmed').tap();
+  await expect(outcome(sheet, /Wide of the road/, 'Filmed')).toHaveAttribute('aria-checked', 'true');
   await sheet.getByRole('radio', { name: 'Ready to film' }).tap();
   await waitSaved(page);
   await sheet.getByRole('button', { name: '← Scenes' }).tap();
@@ -38,7 +38,7 @@ test('phone: outline, scene editing, timing, reorder and captured shots by touch
   await page.getByRole('button', { name: 'Move Mountain pass later' }).tap();
   await page.getByRole('button', { name: 'Move Mountain pass later' }).tap();
   expect(await cardTitles(page)).toEqual(['Packing for the ride', 'Loading the trailer', 'The road to the mountains', 'Mountain pass', 'Fuel and coffee stop']);
-  await expect(page.locator('.cards .card').nth(3)).toContainText('1/1 captured');
+  await expect(page.locator('.cards .card').nth(3)).toContainText('1 filmed');
   await expect(page.locator('.cards .card').nth(3)).toContainText('Ready');
   await waitSaved(page);
 
@@ -54,10 +54,20 @@ test('phone: outline, scene editing, timing, reorder and captured shots by touch
   // The filming checklist is quick to use on the phone.
   await page.getByRole('button', { name: 'More' }).tap();
   await page.getByRole('link', { name: 'Filming checklist' }).tap();
-  const first = page.locator('.checklist-shots input').first();
+  const first = page.locator('.checklist-shots .outcome-filmed').first();
   await first.tap();
-  await expect(first).toBeChecked();
+  await expect(first).toHaveAttribute('aria-checked', 'true');
   await waitSaved(page);
+
+  // On the road: skip a shot with one tap, then add the reason with one more.
+  await page.goto(`/#/e/${id}/shots`);
+  await outcome(page, /Hands fastening a bag/, 'Skipped').tap();
+  await page.getByRole('button', { name: 'Wind too strong' }).tap();
+  await expect(page.locator('.shot-card.is-skipped')).toContainText('Skipped · Wind too strong');
+  await waitSaved(page);
+  const after = (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode;
+  const skipped = after.scenes.flatMap((s: { shots: { description: string }[] }) => s.shots).find((s: { description: string }) => /Hands fastening a bag/.test(s.description));
+  expect(skipped).toMatchObject({ outcome: 'skipped', skipReason: 'Wind too strong', captured: false });
 });
 
 test('phone: storyboard drawing by touch, image upload, reopen (acceptance 14)', async ({ page }) => {

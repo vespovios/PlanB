@@ -5,7 +5,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { buildChecklist, filmSlot, type ChecklistOrder } from '../../shared/checklist';
 import { parseFiveLines } from '../../shared/outline';
-import { GEAR_KINDS, capturedCount, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode, type GearItem, type ImageAttachment, type Scene } from '../../shared/model';
+import { GEAR_KINDS, capturedCount, formatTime, outcomeSummary, sceneNumber, sceneStarts, totalSeconds, type Episode, type GearItem, type ImageAttachment, type Scene } from '../../shared/model';
 import { GEAR_KIND_LABELS } from '../planner/KitList';
 import { CUT_TYPES, PACING, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term, type Term } from '../../shared/vocab';
 import { assetUrl, type User } from '../api';
@@ -130,7 +130,7 @@ export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: Us
         )}
 
         {on.shots && (
-          <PkSection title="Shot list" kicker="On location" note={`${essential} essential · ${shots.length - essential} optional · ★ = essential · tick when filmed (captured ≠ reviewed)`}>
+          <PkSection title="Shot list" kicker="On location" note={`${essential} essential · ${shots.length - essential} optional · ★ = essential · ✓ filmed (reported, not reviewed) · ✕ skipped on purpose · empty box = still open`}>
             {buildChecklist(episode, order).map((group, gi) => (
               <div key={gi} className="pk-shot-group">
                 {order === 'location' && <h3 className="pk-group-title">📍 {group.label ?? 'No location given'}</h3>}
@@ -325,8 +325,9 @@ function Cover(props: {
                     </td>
                     <td className="num">{formatTime(s.durationSeconds)}</td>
                     <td className="pk-running-loc">{clip(s.location, 60)}</td>
-                    <td className="num">
-                      {c.captured}/{c.total}
+                    <td className="num" title={outcomeSummary(c)}>
+                      {c.filmed}/{c.total}
+                      {c.skipped ? ` · ✕${c.skipped}` : ''}
                     </td>
                   </tr>
                 );
@@ -391,7 +392,8 @@ function ShotTable({
             : `${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}`}
         </span>
         <span className="pk-banner-count">
-          ☐ {c.captured}/{c.total}
+          ✓ {c.filmed}/{c.total}
+          {c.skipped ? ` · ✕ ${c.skipped}` : ''}
         </span>
       </div>
       <div className="pk-banner-sub">
@@ -419,7 +421,9 @@ function ShotTable({
             {scene.shots.map((shot, j) => (
               <tr key={shot.id} className={shot.priority === 'essential' ? 'is-essential' : 'is-optional'}>
                 <td className="col-check">
-                  <span className={`pk-box ${shot.captured ? 'ticked' : ''}`}>{shot.captured ? '✓' : ''}</span>
+                  <span className={`pk-box ${shot.outcome === 'filmed' ? 'ticked' : shot.outcome === 'skipped' ? 'skipped' : ''}`}>
+                    {shot.outcome === 'filmed' ? '✓' : shot.outcome === 'skipped' ? '✕' : ''}
+                  </span>
                 </td>
                 <td className="col-ref">{shotRef(index, j)}</td>
                 {cols.size && (
@@ -447,6 +451,7 @@ function ShotTable({
                 <td>
                   {shot.framing && <strong>{shot.framing}: </strong>}
                   {shot.description}
+                  {shot.outcome === 'skipped' && <span className="pk-skipped">Skipped{shot.skipReason ? ` — ${shot.skipReason}` : ''}</span>}
                   {shot.cameraNotes && <span className="pk-shot-notes">{shot.cameraNotes}</span>}
                 </td>
                 {cols.gear && (

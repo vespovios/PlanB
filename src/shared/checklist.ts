@@ -1,5 +1,5 @@
 // Filming checklist derived directly from the saved scenes and shots.
-import { capturedCount, formatTime, sceneNumber, sceneStarts, type EpisodeDoc, type Scene } from './model.js';
+import { capturedCount, formatTime, outcomeSummary, sceneNumber, sceneStarts, type EpisodeDoc, type Scene, type Shot } from './model.js';
 
 export interface ChecklistScene {
   number: string;
@@ -61,18 +61,21 @@ export function checklistOrder(value: unknown): ChecklistOrder {
 
 export function checklistMarkdown(doc: EpisodeDoc, order: ChecklistOrder = 'story'): string {
   const lines: string[] = [`# Filming checklist: ${doc.title}`, ''];
-  lines.push('Captured means the creator reports the shot was filmed; it does not mean the footage has been reviewed.', '');
+  lines.push(
+    'Shot outcomes: [ ] open (no outcome yet) · [x] filmed (reported as filmed, footage not reviewed) · [-] skipped (deliberately dropped; no footage exists).',
+    '',
+  );
   if (order === 'filming') lines.push('In filming order (day, then stop). Scene numbers follow the story.', '');
   const grouped = order !== 'story';
   for (const group of buildChecklist(doc, order)) {
     if (order === 'location') lines.push(`## Location: ${group.label ?? 'No location given'}`, '');
     if (order === 'filming') lines.push(`## ${group.label ?? 'No filming day set'}`, '');
     for (const { number, start, scene } of group.scenes) {
-      const { captured, total } = capturedCount(scene);
+      const counts = capturedCount(scene);
       const slot = filmSlot(scene);
       lines.push(
         `${grouped ? '###' : '##'} ${number} ${scene.title} (${scene.id})`,
-        `${order === 'filming' ? 'edit position ' : ''}${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}${order === 'filming' ? ' on screen' : ''} · planning status: ${scene.status} · captured ${captured}/${total}${slot ? ` · filming: ${slot}` : ''}`,
+        `${order === 'filming' ? 'edit position ' : ''}${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}${order === 'filming' ? ' on screen' : ''} · planning status: ${scene.status} · ${outcomeSummary(counts)}${slot ? ` · filming: ${slot}` : ''}`,
       );
       if (scene.location && order !== 'location') lines.push(`Location: ${scene.location}`);
       if (scene.purpose) lines.push(`Purpose: ${scene.purpose}`);
@@ -82,11 +85,24 @@ export function checklistMarkdown(doc: EpisodeDoc, order: ChecklistOrder = 'stor
       lines.push('');
       for (const shot of scene.shots) {
         const extra = [shot.framing, shot.priority, shot.cameraNotes].filter(Boolean).join(' · ');
-        lines.push(`- [${shot.captured ? 'x' : ' '}] ${shot.description}${extra ? ` (${extra})` : ''} [${shot.id}]`);
+        lines.push(`- ${outcomeBox(shot)} ${shot.description}${extra ? ` (${extra})` : ''}${outcomeNote(shot)} [${shot.id}]`);
       }
       if (!scene.shots.length) lines.push('- No shots listed');
       lines.push('');
     }
   }
   return lines.join('\n');
+}
+
+/** Markdown task box: [ ] open, [x] filmed, [-] skipped. */
+export function outcomeBox(shot: Pick<Shot, 'outcome'>): string {
+  return shot.outcome === 'filmed' ? '[x]' : shot.outcome === 'skipped' ? '[-]' : '[ ]';
+}
+
+/** " — skipped: wind too strong" / " — journal: tl_123" suffix for text outputs. */
+export function outcomeNote(shot: Pick<Shot, 'outcome' | 'skipReason' | 'journalRefs'>): string {
+  const parts: string[] = [];
+  if (shot.outcome === 'skipped') parts.push(`skipped${shot.skipReason ? `: ${shot.skipReason}` : ''}`);
+  if (shot.journalRefs?.length) parts.push(`journal: ${shot.journalRefs.join(', ')}`);
+  return parts.length ? ` — ${parts.join(' — ')}` : '';
 }

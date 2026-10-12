@@ -35,9 +35,10 @@ All paths inside the bundle are relative to the file that contains them. Externa
       "thumbnailAttachmentId": "at_…|null",
       "cutToNext": "jcut|match|…|null",
       "filmDay": "1…99|null", "filmStop": "1…99|null",
-      "capturedShots": 1, "totalShots": 3,
+      "capturedShots": 1, "skippedShots": 1, "openShots": 1, "totalShots": 3,
       "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "size": "ws|null", "angle": "low|null", "movement": "track|null", "gear": ["ge_…"], "cameraNotes": "…",
-                  "priority": "essential|optional", "captured": false }],
+                  "priority": "essential|optional", "outcome": "open|filmed|skipped", "skipReason": "…", "outcomeAt": "ISO time|null",
+                  "journalRefs": ["…"], "captured": false }],
       "attachments": [
         { "id": "at_…", "kind": "image", "label": "…", "caption": "…", "assetId": "as_…",
           "file": "assets/as_….jpg", "mime": "image/jpeg", "bytes": 123456, "width": 1600, "height": 1200 },
@@ -53,7 +54,7 @@ All paths inside the bundle are relative to the file that contains them. Externa
 }
 ```
 
-Scene IDs, shot IDs and attachment IDs are stable across reordering and renaming. `number` is positional. `startSeconds` is derived from the order and the durations. `captured` means the creator reported filming the shot; it does not mean the footage has been reviewed.
+Scene IDs, shot IDs and attachment IDs are stable across reordering and renaming. `number` is positional. `startSeconds` is derived from the order and the durations. Shot `outcome`: `open` = no outcome yet, `filmed` = the creator reported filming it (footage not reviewed), `skipped` = deliberately dropped, so **no footage exists** (`skipReason` and `journalRefs` give context). `captured` mirrors `outcome === "filmed"` for older readers.
 
 ## Storyboard document (schemaVersion 1)
 

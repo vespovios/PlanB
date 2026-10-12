@@ -1,7 +1,7 @@
 // Shot list workspace: scene list beside the selected scene's shot table (cards on phones).
 import { Fragment, useState } from 'react';
 import { randomId } from '../../shared/ids';
-import { capturedCount, formatTime, sceneNumber, sceneStarts, type Episode, type Scene, type Shot } from '../../shared/model';
+import { capturedCount, formatTime, outcomeSummary, sceneNumber, sceneStarts, type Episode, type Scene, type Shot } from '../../shared/model';
 import { SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term } from '../../shared/vocab';
 import { assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
@@ -10,10 +10,11 @@ import { ShotSizeIcon } from '../components/ShotIcons';
 import { useMediaQuery } from '../components/ui';
 import { sceneThumbnail } from './Cards';
 import { filmSlot } from '../../shared/checklist';
+import { JournalRefs, OutcomeControl, SkipReason } from '../components/Outcome';
 import { ShotRow } from './Shots';
 import { href, navigate } from '../router';
 
-type Filter = 'all' | 'essential' | 'optional' | 'todo';
+type Filter = 'all' | 'open' | 'filmed' | 'skipped' | 'essential' | 'optional';
 const shotRef = (sceneIndex: number, shotIndex: number) => `${sceneIndex + 1}${shotIndex < 26 ? String.fromCharCode(65 + shotIndex) : `.${shotIndex + 1}`}`;
 
 interface Props {
@@ -52,15 +53,20 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
     );
   }
 
-  const counts = {
+  const sceneCounts = capturedCount(scene);
+  const counts: Record<Filter, number> = {
     all: scene.shots.length,
+    open: sceneCounts.open,
+    filmed: sceneCounts.filmed,
+    skipped: sceneCounts.skipped,
     essential: scene.shots.filter((s) => s.priority === 'essential').length,
     optional: scene.shots.filter((s) => s.priority === 'optional').length,
-    todo: scene.shots.filter((s) => !s.captured).length,
   };
+  const matchesFilter = (shot: Shot) =>
+    filter === 'all' ? true : filter === 'essential' || filter === 'optional' ? shot.priority === filter : shot.outcome === filter;
   const visible = scene.shots
     .map((shot, j) => ({ shot, j }))
-    .filter(({ shot }) => (filter === 'essential' ? shot.priority === 'essential' : filter === 'optional' ? shot.priority === 'optional' : filter === 'todo' ? !shot.captured : true))
+    .filter(({ shot }) => matchesFilter(shot))
     .filter(({ shot }) => !gearFilter || (shot.gear ?? []).includes(gearFilter));
 
   const update = (shot: Shot, fields: Partial<Shot>) => engine.queue({ op: 'updateShot', sceneId: scene.id, shotId: shot.id, fields: fields as never });
@@ -98,9 +104,11 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
       {(
         [
           ['all', 'All'],
+          ['open', 'Open'],
+          ['filmed', 'Filmed'],
+          ['skipped', 'Skipped'],
           ['essential', 'Essential'],
           ['optional', 'Optional'],
-          ['todo', 'Not captured'],
         ] as [Filter, string][]
       ).map(([k, label]) => (
         <button key={k} type="button" className={`filter-chip ${filter === k ? 'on' : ''}`} aria-pressed={filter === k} onClick={() => setFilter(k)}>
@@ -180,10 +188,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
         </div>
         <ul className="shot-cards">
           {visible.map(({ shot, j }) => (
-            <li key={shot.id} className={`shot-card ${shot.captured ? 'captured' : ''}`}>
-              <label className="shot-card-check">
-                <input type="checkbox" checked={shot.captured} onChange={(e) => update(shot, { captured: e.target.checked })} aria-label={`Captured: ${shot.description}`} />
-              </label>
+            <li key={shot.id} className={`shot-card is-${shot.outcome}`}>
               <button type="button" className="shot-card-body" onClick={() => setEditing(editing === shot.id ? null : shot.id)} aria-expanded={editing === shot.id}>
                 <b>
                   {shotRef(index, j)}
@@ -196,6 +201,11 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                 </span>
                 {(shot.gear ?? []).length > 0 && <span className="chip-row">{gearChips(shot)}</span>}
               </button>
+              <div className="shot-card-outcome">
+                <OutcomeControl shot={shot} size="lg" labels onChange={(f) => update(shot, f)} />
+                <SkipReason shot={shot} onChange={(skipReason) => update(shot, { skipReason })} />
+                <JournalRefs refs={shot.journalRefs} />
+              </div>
               {editing === shot.id && <div className="shot-card-editor">{editor(shot, j)}</div>}
             </li>
           ))}
@@ -235,7 +245,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                       {matches ? <b className="match-count">{matches} with {gearName.get(gearFilter)}</b> : null}
                     </span>
                   </span>
-                  <Ring value={c.total ? c.captured / c.total : 0} size={22} stroke={2.6} label={`${c.captured} of ${c.total} captured`} />
+                  <Ring value={c.total ? (c.filmed + c.skipped) / c.total : 0} size={22} stroke={2.6} label={outcomeSummary(c)} />
                 </button>
               </li>
             );
@@ -299,7 +309,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
             {visible.map(({ shot, j }) => (
               <Fragment key={shot.id}>
                 <tr
-                  className={`${shot.captured ? 'captured' : ''} ${editing === shot.id ? 'editing' : ''}`}
+                  className={`is-${shot.outcome} ${editing === shot.id ? 'editing' : ''}`}
                   tabIndex={0}
                   aria-expanded={editing === shot.id}
                   aria-label={`Shot ${shotRef(index, j)}: ${shot.description}`}
@@ -312,7 +322,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                   }}
                 >
                   <td className="col-check" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={shot.captured} onChange={(e) => update(shot, { captured: e.target.checked })} aria-label={`Captured: ${shot.description}`} />
+                    <OutcomeControl shot={shot} onChange={(f) => update(shot, f)} />
                   </td>
                   <td className="col-ref">{shotRef(index, j)}</td>
                   <td className="col-desc">
@@ -324,6 +334,8 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                         <Icon name="notes" size={13} /> Camera notes
                       </span>
                     )}
+                    <SkipReason shot={shot} onChange={(skipReason) => update(shot, { skipReason })} />
+                    <JournalRefs refs={shot.journalRefs} />
                   </td>
                   <td className="col-setup">
                     <span className="spec-cell">
@@ -356,7 +368,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
           </tbody>
         </table>
         {addForm}
-        <p className="muted small capture-note">Click a row to edit it and see its camera notes. “Captured” means you filmed it; it doesn’t mean the footage has been reviewed.</p>
+        <p className="muted small capture-note">Click a row to edit it and see its camera notes. ○ open · ✓ filmed (reported, not reviewed) · ✕ skipped on purpose, so there is no footage.</p>
       </section>
     </div>
   );

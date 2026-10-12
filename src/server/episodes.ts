@@ -5,6 +5,8 @@ import crypto from 'node:crypto';
 import { randomId } from '../shared/ids.js';
 import {
   EpisodeDocSchema,
+  normaliseDoc,
+  outcomeCounts,
   totalSeconds,
   type Episode,
   type EpisodeDoc,
@@ -40,6 +42,9 @@ export interface ChangeResult {
   episode: Episode;
   created: Record<number, string>;
 }
+
+/** Stored documents may predate newer fields (e.g. shot outcomes); bring them up to date on read. */
+const parseDoc = (json: string): EpisodeDoc => normaliseDoc(JSON.parse(json) as EpisodeDoc);
 
 export class Episodes {
   /** Emits `${episodeId}` with the new revision whenever a revision is committed. */
@@ -83,7 +88,7 @@ export class Episodes {
       revision: row.revision,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      ...(JSON.parse(row.doc) as EpisodeDoc),
+      ...parseDoc(row.doc),
     };
   }
 
@@ -98,7 +103,8 @@ export class Episodes {
       )
       .all({ me: principal.user.id }) as (EpisodeRow & { owner_name: string | null })[];
     return rows.map((r) => {
-      const doc = JSON.parse(r.doc) as EpisodeDoc;
+      const doc = parseDoc(r.doc);
+      const outcomes = outcomeCounts(doc.scenes.flatMap((s) => s.shots));
       return {
         id: r.id,
         ownerName: r.owner_name,
@@ -111,7 +117,8 @@ export class Episodes {
         updatedAt: r.updated_at,
         coverAssetIds: doc.scenes.flatMap((s) => (s.storyboard ? [s.storyboard.previewAssetId] : [])).slice(0, 6),
         shotCount: doc.scenes.reduce((n, s) => n + s.shots.length, 0),
-        capturedCount: doc.scenes.reduce((n, s) => n + s.shots.filter((x) => x.captured).length, 0),
+        capturedCount: outcomes.filmed,
+        skippedCount: outcomes.skipped,
         storyboardCount: doc.scenes.filter((s) => s.storyboard).length,
       };
     });
@@ -158,6 +165,7 @@ export class Episodes {
   private context(principal: Principal, row: EpisodeRow): ApplyContext {
     return {
       newId: (prefix) => randomId(prefix),
+      now: () => now(),
       nextRevision: row.revision + 1,
       resolveAsset: (assetId) => {
         const a = this.assets.get(assetId);
@@ -175,7 +183,7 @@ export class Episodes {
       .iterate(episodeId) as Iterable<{ doc: string }>;
     for (const r of rows) {
       if (!r.doc.includes(sceneId)) continue;
-      const scene = (JSON.parse(r.doc) as EpisodeDoc).scenes.find((s) => s.id === sceneId);
+      const scene = parseDoc(r.doc).scenes.find((s) => s.id === sceneId);
       if (scene) return scene;
     }
     return null;
@@ -192,7 +200,7 @@ export class Episodes {
     const row = this.row(principal, episodeId);
     if (row.revision !== req.baseRevision) throw this.staleError(row, req.baseRevision);
 
-    const before = JSON.parse(row.doc) as EpisodeDoc;
+    const before = parseDoc(row.doc);
     let result;
     try {
       result = applyOperations(before, req.operations, this.context(principal, row));
@@ -286,7 +294,7 @@ export class Episodes {
       | undefined;
     if (!r) throw notFound('Revision not found');
     return {
-      ...(JSON.parse(r.doc) as EpisodeDoc),
+      ...parseDoc(r.doc),
       id,
       createdAt: r.created_at,
       updatedAt: r.created_at,
@@ -331,6 +339,7 @@ export class Episodes {
       notes: snap.notes,
       targetSeconds: snap.targetSeconds,
       status: snap.status,
+      gear: snap.gear ?? [],
       scenes: snap.scenes,
     });
     const next = row.revision + 1;

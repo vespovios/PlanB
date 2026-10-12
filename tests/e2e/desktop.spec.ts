@@ -1,5 +1,5 @@
 import { devices, expect, test } from '@playwright/test';
-import { apiAsAgent, createEpisode, login, samplePngFile, waitSaved } from './helpers';
+import { apiAsAgent, createEpisode, login, outcome, samplePngFile, waitSaved } from './helpers';
 
 const blocks = (page: import('@playwright/test').Page) => page.locator('.timeline-track .block');
 const titles = async (page: import('@playwright/test').Page) => (await page.locator('.timeline-track .block .block-title').allTextContents()).map((t) => t.trim());
@@ -19,7 +19,7 @@ test('timeline editing, reorder, resize and synchronised cards (acceptance 1–3
   await waitSaved(page);
 
   // Tick a captured shot in "Loading the trailer", then drag that block to the end of the timeline.
-  await page.getByLabel(/Captured: Straps tightening/).check();
+  await outcome(page, /Straps tightening/, 'Filmed').click();
   await waitSaved(page);
   const loadingId = (await page.locator('.scene-meta code').textContent())!;
   await page.locator('.timeline-track').scrollIntoViewIfNeeded();
@@ -55,14 +55,14 @@ test('timeline editing, reorder, resize and synchronised cards (acceptance 1–3
   await page.getByRole('radio', { name: 'Cards' }).click();
   const cardTitles = await page.locator('.cards .card-title').allTextContents();
   expect(cardTitles).toEqual(['Packing for the ride', 'The road to the mountains', 'Fuel and coffee stop', 'Loading the trailer']);
-  await expect(page.locator('.cards .card').nth(3)).toContainText('1/3 captured');
+  await expect(page.locator('.cards .card').nth(3)).toContainText('1 filmed · 2 open');
   // Reorder in Cards with a button; the timeline follows.
   await page.getByRole('button', { name: 'Move Loading the trailer earlier' }).click();
   await page.getByRole('radio', { name: 'Timeline' }).click();
   await expect.poll(() => titles(page)).toEqual(['Packing for the ride', 'The road to the mountains', 'Loading the trailer', 'Fuel and coffee stop']);
   await blocks(page).nth(2).click();
   await expect(page.locator('.scene-meta code')).toHaveText(loadingId);
-  await expect(page.getByLabel(/Captured: Straps tightening/)).toBeChecked();
+  await expect(outcome(page, /Straps tightening/, 'Filmed')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('.status-row [aria-checked="true"]')).toHaveText('Draft'); // capture never changes planning status
   await waitSaved(page);
 
@@ -270,7 +270,7 @@ test('references and storyboard: draw, save, reopen, alter, cancel (acceptance 1
 test('filming checklist and print view (acceptance 8)', async ({ page }) => {
   await login(page);
   await createEpisode(page, 'Checklist test');
-  await page.getByLabel(/Captured: Both riders and bikes/).check();
+  await outcome(page, /Both riders and bikes/, 'Filmed').click();
   await waitSaved(page);
   await page.getByRole('link', { name: 'Filming checklist' }).click();
   await expect(page.getByRole('heading', { name: 'Checklist test' })).toBeVisible();
@@ -395,10 +395,11 @@ test('episode overview, shot list tab and storyboard board', async ({ page }) =>
   await page.getByRole('button', { name: /S02 Loading/ }).click();
   const rows = page.locator('.shot-table tbody tr:not(.editor-row)');
   await expect(rows).toHaveCount(3);
-  await page.getByLabel(/Captured: Straps tightening/).check();
+  await outcome(page, /Straps tightening/, 'Filmed').click();
   await expect(page.locator('.scene-pane-item.on')).toContainText('3 shots');
-  await page.getByRole('button', { name: /^Not captured/ }).click();
+  await page.locator('.filter-chips').getByRole('button', { name: /^Open/ }).click();
   await expect(rows).toHaveCount(2);
+  await expect(page.locator('.filter-result')).toContainText('Showing 2 of 3 shots');
   await page.getByRole('button', { name: /^All/ }).click();
   await rows.first().click();
   await expect(page.locator('.editor-row')).toHaveCount(1);

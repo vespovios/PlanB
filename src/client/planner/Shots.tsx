@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { randomId } from '../../shared/ids';
-import { capturedCount, type GearItem, type Scene, type Shot } from '../../shared/model';
+import { capturedCount, outcomeSummary, type GearItem, type Scene, type Shot } from '../../shared/model';
+import { JournalRefs, OutcomeControl, SkipReason } from '../components/Outcome';
 import type { EpisodeSync } from '../sync';
 import { Disclosure, TextField } from '../components/ui';
 import { ShotSizeIcon } from '../components/ShotIcons';
@@ -25,7 +26,8 @@ const TEXT_DEBOUNCE = 700;
 
 export function ShotsPanel({ scene, engine, gear = [] }: { scene: Scene; engine: EpisodeSync; gear?: GearItem[] }) {
   const [draft, setDraft] = useState('');
-  const { captured, total } = capturedCount(scene);
+  const counts = capturedCount(scene);
+  const total = counts.total;
   const add = () => {
     const description = draft.trim();
     if (!description) return;
@@ -38,7 +40,7 @@ export function ShotsPanel({ scene, engine, gear = [] }: { scene: Scene; engine:
         <h3 className="eyebrow">Shots to capture</h3>
         <span className="eyebrow muted" aria-live="polite">
           {total} shot{total === 1 ? '' : 's'}
-          {total > 0 && ` · ${captured} captured`}
+          {total > 0 && ` · ${outcomeSummary(counts)}`}
         </span>
       </div>
       {total === 0 && <p className="muted small">No shots yet. Start with the one to three shots this scene really needs.</p>}
@@ -91,12 +93,12 @@ export function ShotRow({ shot, index, count, scene, engine, gear }: { shot: Sho
   const update = (fields: Partial<Shot>, debounce = 0) =>
     engine.queue({ op: 'updateShot', sceneId: scene.id, shotId: shot.id, fields }, debounce);
   return (
-    <li className={`shot ${shot.captured ? 'captured' : ''}`}>
-      <label className="shot-check" title="Captured: you filmed this shot">
-        <input type="checkbox" checked={shot.captured} onChange={(e) => update({ captured: e.target.checked })} aria-label={`Captured: ${shot.description}`} />
+    <li className={`shot is-${shot.outcome}`}>
+      <div className="shot-check">
+        <OutcomeControl shot={shot} onChange={(f) => update(f)} />
         <span className="shot-num">{String(index + 1).padStart(2, '0')}</span>
         <ShotSizeIcon size={shot.size} />
-      </label>
+      </div>
       <div className="shot-body">
         <div className="shot-line">
           <TextField
@@ -133,6 +135,8 @@ export function ShotRow({ shot, index, count, scene, engine, gear }: { shot: Sho
           onChange={(v) => update({ description: v }, TEXT_DEBOUNCE)}
           onBlur={() => void engine.flush()}
         />
+        <SkipReason shot={shot} onChange={(skipReason) => update({ skipReason })} />
+        <JournalRefs refs={shot.journalRefs} />
         {notesOpen ? (
           <TextField
             multiline

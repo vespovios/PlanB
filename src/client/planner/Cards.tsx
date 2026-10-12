@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { capturedCount, formatTime, sceneNumber, sceneStarts, type Scene } from '../../shared/model';
+import { capturedCount, formatTime, outcomeSummary, sceneNumber, sceneStarts, type Scene } from '../../shared/model';
 import { assetUrl } from '../api';
 import { capturePointer } from '../components/ui';
 
@@ -49,7 +49,8 @@ export function Cards({ scenes, selectedId, onSelect, onMove, layout }: Props) {
     >
       {scenes.map((s, i) => {
         const thumb = sceneThumbnail(s);
-        const { captured, total } = capturedCount(s);
+        const c = capturedCount(s);
+        const total = c.total;
         const dragging = drag?.id === s.id;
         const dropHere = drag && !dragging && drag.over === i;
         return (
@@ -72,9 +73,9 @@ export function Cards({ scenes, selectedId, onSelect, onMove, layout }: Props) {
                   {formatTime(s.durationSeconds)}
                   <span className="muted"> · at {formatTime(starts[i])}</span>
                   {total > 0 && (
-                    <span className="muted" title="Shots the creator has reported as filmed">
+                    <span className="muted" title="Filmed (reported) · skipped on purpose · still open">
                       {' '}
-                      · {captured}/{total} captured
+                      · {outcomeSummary(c)}
                     </span>
                   )}
                 </span>

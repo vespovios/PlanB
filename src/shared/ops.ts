@@ -6,6 +6,8 @@ import {
   AttachmentId,
   CutTypeEnum,
   FilmNumber,
+  ShotOutcome,
+  normaliseDoc,
   Duration,
   EpisodeDocSchema,
   GearId,
@@ -20,6 +22,7 @@ import {
   ShotMovementEnum,
   ShotPriority,
   ShotSchema,
+  type Shot,
   ShotSizeEnum,
   referentialProblems,
   type Attachment,
@@ -73,6 +76,10 @@ const ShotFields = z
     cameraNotes: t(),
     gear: z.array(GearId).max(12),
     priority: ShotPriority,
+    outcome: ShotOutcome,
+    skipReason: t(160),
+    journalRefs: z.array(t(300).trim().min(1)).max(20),
+    /** Legacy: true = filmed, false = open. Prefer `outcome`. */
     captured: z.boolean(),
   })
   .partial()
@@ -156,7 +163,21 @@ export class OperationError extends Error {
   }
 }
 
+/**
+ * Keeps a shot's outcome fields consistent after an edit: the legacy `captured` flag maps to
+ * filmed/open, `captured` mirrors outcome, a skip reason only lives on skipped shots, and the
+ * time is recorded whenever the outcome changes.
+ */
+function settleOutcome(shot: Shot, before: Shot['outcome'], fields: Partial<Shot>, stamp: () => string) {
+  if (fields.outcome === undefined && fields.captured !== undefined) shot.outcome = fields.captured ? 'filmed' : 'open';
+  shot.captured = shot.outcome === 'filmed';
+  if (shot.outcome !== 'skipped') shot.skipReason = '';
+  if (shot.outcome !== before || (fields.outcome !== undefined && !shot.outcomeAt)) shot.outcomeAt = shot.outcome === 'open' ? null : stamp();
+}
+
 export interface ApplyContext {
+  /** Time to record for shot outcomes; defaults to the local clock. */
+  now?(): string;
   newId(prefix: 'sc' | 'sh' | 'at' | 'sb' | 'as' | 'ge'): string;
   /** Revision number this batch will create. */
   nextRevision: number;
@@ -180,7 +201,8 @@ const clamp = (i: number | undefined, len: number) => (i === undefined ? len : M
  * The resulting document is fully validated, including cross-references.
  */
 export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyContext): ApplyResult {
-  const doc: EpisodeDoc = structuredClone(input);
+  const doc: EpisodeDoc = normaliseDoc(structuredClone(input));
+  const stamp = () => ctx.now?.() ?? new Date().toISOString();
   const toRender = new Set<string>();
   const created: Record<number, string> = {};
   const allIds = () => {
@@ -259,6 +281,7 @@ export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyC
         const id = freshId('sh', op.id, i);
         const shot = ShotSchema.safeParse({ ...op.shot, id });
         if (!shot.success) throw new OperationError(formatZodError(shot.error), i);
+        settleOutcome(shot.data, 'open', op.shot, stamp);
         s.shots.splice(clamp(op.index, s.shots.length), 0, shot.data);
         created[i] = id;
         break;
@@ -269,8 +292,11 @@ export function applyOperations(input: EpisodeDoc, ops: Operation[], ctx: ApplyC
         const s = scene(op.sceneId);
         const shot = s.shots.find((x) => x.id === op.shotId);
         if (!shot) throw new OperationError(`Shot ${op.shotId} was not found in scene "${s.title}"`, i);
-        if (op.op === 'updateShot') Object.assign(shot, op.fields);
-        else {
+        if (op.op === 'updateShot') {
+          const before = shot.outcome;
+          Object.assign(shot, op.fields);
+          settleOutcome(shot, before, op.fields, stamp);
+        } else {
           s.shots.splice(s.shots.indexOf(shot), 1);
           if (op.op === 'moveShot') s.shots.splice(clamp(op.index, s.shots.length), 0, shot);
         }
@@ -383,6 +409,8 @@ const FIELD_NAMES: Record<string, string> = {
   cameraNotes: 'camera notes',
   thumbnailAttachmentId: 'thumbnail',
   cutToNext: 'cut to next scene',
+  skipReason: 'skip reason',
+  journalRefs: 'journal links',
   filmDay: 'filming day',
   filmStop: 'filming stop',
   description: 'description',
@@ -413,8 +441,14 @@ export function summariseOperations(before: EpisodeDoc, ops: Operation[]): strin
         return `Moved ${title(op.sceneId)}`;
       case 'addShot':
         return `Added shot to ${title(op.sceneId)}`;
-      case 'updateShot':
+      case 'updateShot': {
+        const shot = before.scenes.find((s) => s.id === op.sceneId)?.shots.find((x) => x.id === op.shotId);
+        const what = shot ? `"${shot.description.length > 50 ? shot.description.slice(0, 49) + '…' : shot.description}"` : 'a shot';
+        if (op.fields.outcome)
+          return `Marked ${what} in ${title(op.sceneId)} as ${op.fields.outcome}${op.fields.skipReason ? ` (${op.fields.skipReason})` : ''}`;
+        if (op.fields.skipReason !== undefined) return `Skip reason for ${what}: ${op.fields.skipReason || 'cleared'}`;
         return `Edited shot in ${title(op.sceneId)} (${fieldList(op.fields)})`;
+      }
       case 'deleteShot':
         return `Deleted shot from ${title(op.sceneId)}`;
       case 'moveShot':

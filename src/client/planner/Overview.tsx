@@ -1,5 +1,5 @@
 // Episode overview dashboard: progress, running order, five lines and open questions.
-import { formatTime, sceneNumber, totalSeconds, type Episode } from '../../shared/model';
+import { outcomeCounts, formatTime, sceneNumber, totalSeconds, type Episode } from '../../shared/model';
 import { parseFiveLines } from '../../shared/outline';
 import { Icon, Ring, sceneColour } from '../components/Icon';
 import { href, navigate } from '../router';
@@ -19,7 +19,7 @@ export function Overview({ episode, onOpenScene }: { episode: Episode; onOpenSce
   const total = totalSeconds(episode);
   const target = episode.targetSeconds;
   const shots = episode.scenes.flatMap((s) => s.shots);
-  const captured = shots.filter((s) => s.captured).length;
+  const outcomes = outcomeCounts(shots);
   const essential = shots.filter((s) => s.priority === 'essential').length;
   const sketches = episode.scenes.filter((s) => s.storyboard).length;
   const gear = episode.gear ?? [];
@@ -29,7 +29,14 @@ export function Overview({ episode, onOpenScene }: { episode: Episode; onOpenSce
 
   const kpis = [
     { ring: target ? total / target : total ? 1 : 0, colour: target && total > target ? '#d4504f' : '#2e9e57', value: formatTime(total), label: target ? `of ${formatTime(target)} target` : 'planned runtime', tab: 'plan' as const },
-    { ring: shots.length ? captured / shots.length : 0, colour: '#3a7bd5', value: `${captured}/${shots.length}`, label: 'shots captured', tab: 'shots' as const },
+    {
+      // Skipped shots count as resolved, never as filmed.
+      ring: shots.length ? (outcomes.filmed + outcomes.skipped) / shots.length : 0,
+      colour: '#3a7bd5',
+      value: `${outcomes.filmed}/${shots.length}`,
+      label: `filmed${outcomes.skipped ? ` · ${outcomes.skipped} skipped` : ''} · ${outcomes.open} open`,
+      tab: 'shots' as const,
+    },
     { ring: shots.length ? essential / shots.length : 0, colour: '#16191f', value: String(essential), label: 'essential shots', tab: 'shots' as const },
     { ring: episode.scenes.length ? sketches / episode.scenes.length : 0, colour: '#9a5bd3', value: `${sketches}/${episode.scenes.length}`, label: 'storyboards', tab: 'storyboard' as const },
     { ring: gear.length ? 1 : 0, colour: '#e08a2e', value: String(gear.length), label: 'kit items', tab: 'kit' as const },

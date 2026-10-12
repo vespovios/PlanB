@@ -71,8 +71,9 @@ export function EpisodesPage({ user, onSignOut }: { user: User; onSignOut: () =>
                       {e.targetSeconds ? <span className="muted"> / {formatTime(e.targetSeconds)}</span> : null}
                     </span>
                     <span>
-                      <Ring value={e.shotCount ? e.capturedCount / e.shotCount : 0} colour="#3a7bd5" size={28} stroke={3} />
-                      {e.capturedCount}/{e.shotCount} shots
+                      <Ring value={e.shotCount ? (e.capturedCount + (e.skippedCount ?? 0)) / e.shotCount : 0} colour="#3a7bd5" size={28} stroke={3} />
+                      {e.capturedCount}/{e.shotCount} filmed
+                      {e.skippedCount ? <span className="muted"> · {e.skippedCount} skipped</span> : null}
                     </span>
                     <span>
                       <Ring value={e.sceneCount ? e.storyboardCount / e.sceneCount : 0} colour="#9a5bd3" size={28} stroke={3} />

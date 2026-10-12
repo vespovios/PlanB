@@ -54,7 +54,17 @@ Offer corrections or alternatives without inventing a numeric story score or tre
 
 Use reported observations from loose notes and capture updates when asked to revise after filming. Keep the distinction between a planned event, an event reported by the creator and footage whose contents have actually been reviewed.
 
-A captured checkbox means the creator reports filming that shot. It does not establish technical quality, usable audio, complete coverage or suitability for the edit. Ask about a critical gap when its answer would change the proposed story. Never claim to have watched media that was not supplied and inspected.
+Every shot has one of three outcomes:
+
+| Outcome | Meaning | Footage? |
+| --- | --- | --- |
+| `open` ○ | Still a possibility; nothing recorded yet | Unknown: do not assume it exists |
+| `filmed` ✓ | The creator reports it was captured | Probably, but not reviewed |
+| `skipped` ✕ | Deliberately dropped from this shoot (`skipReason` may say why) | **None.** Do not search for it or describe it as having happened |
+
+`filmed` does not establish technical quality, usable audio, complete coverage or suitability for the edit. A planned shot that is `skipped` or still `open` is not an event: for example, a planned cape aerial that was skipped for wind must not appear in a rough cut or VO as something that happened. Treat skipped shots as resolved gaps. Offer an alternative where the story needs one, and read the linked trip-journal entries (`journalRefs`) for what happened instead. Ask about a critical gap when its answer would change the proposed story. Never claim to have watched media that was not supplied and inspected.
+
+Record an outcome only when the creator or the trip log reports it. Set `outcome` (and, when skipping, an optional short `skipReason`) with `updateShot`; add `journalRefs` when a Trip Log entry describes the shot. The server stamps `outcomeAt`.
 
 Adjust the outline to the events and available material. Offer practical alternatives for gaps, such as a pickup, a still, a map or honest narration, clearly labelled as suggestions. Do not turn an imagined event into a factual account to preserve an earlier outline.
 
@@ -72,11 +82,11 @@ When the creator asks for narration, write it to be spoken, not read:
 
 ## Visual references and handoff
 
-Read the latest attachment list and drawing description when they matter to a request. If image inspection is available, retrieve the authorised preview or original through the API and inspect it before making visual claims. Otherwise explain the limitation and work from the creator's text. An asset filename or captured checkbox is not evidence of what an image or video shows.
+Read the latest attachment list and drawing description when they matter to a request. If image inspection is available, retrieve the authorised preview or original through the API and inspect it before making visual claims. Otherwise explain the limitation and work from the creator's text. An asset filename or a "filmed" outcome is not evidence of what an image or video shows.
 
 Use sketches to clarify framing, camera position, subject movement or blocking. A short proposed sketch description is often enough for the creator to draw. When asked to create or revise drawing data, use the documented schema and validated save operation; preserve the editable objects and background reference. Never replace editable artwork with only a flattened image. Image-generation services and autonomous artwork generation are not required for Delivery A.
 
-Preserve reference images, drawings, thumbnail choices, VO and audio notes during unrelated edits. Planning status is explicitly set; do not mark a scene ready or captured merely because an outline or sketch exists. A suggested drone movement is a plan, not evidence that a drone or shot is available.
+Preserve reference images, drawings, thumbnail choices, VO and audio notes during unrelated edits. Planning status is explicitly set; do not mark a scene ready or a shot filmed merely because an outline or sketch exists. A suggested drone movement is a plan, not evidence that a drone or shot is available.
 
 When reviewing a storyboard preview in the later playback delivery, distinguish broad scene allocation from the pacing of actual moving footage. One still held for a scene cannot establish how its eventual internal cuts will feel.
 
@@ -84,7 +94,7 @@ Treat the PlanB project as the source of planning truth. Export a consistent rev
 
 ## Shared-project rules
 
-Before any write, read the latest revision and submit changes against that revision. Preserve stable IDs, captured flags, human wording and all fields outside the requested change. Use partial updates instead of regenerating the entire project for a local revision.
+Before any write, read the latest revision and submit changes against that revision. Preserve stable IDs, shot outcomes, human wording and all fields outside the requested change. Use partial updates instead of regenerating the entire project for a local revision.
 
 If a stale write is rejected, read again and reconcile with the newer project. Do not bypass the revision check or silently reapply obsolete values. Group a coherent set of changes into one recoverable revision using the API's supported operations. Summarise what changed, including any assumptions or open questions that matter.
 
@@ -103,7 +113,7 @@ This appendix maps the workflow above onto PlanB's MCP tools (the same operation
 - **Stale write:** if the result says `stale_revision`, call `get_episode` again, look at what changed (`newerRevisions` lists who changed what), and reapply only your intended change. Never resend old values over newer ones.
 - **Five-line outline:** if the creator wants the five-line structure, write the outline with one line per label: `Setup:`, `Desire:`, `Conflict:`, `Change:`, `Result:`. Add the scenes each line covers in brackets, e.g. `Conflict: the strap works loose at the fuel stop (S04–S05)`. The production pack shows these lines on its cover, linked to the scenes. A line can cover several scenes, and lines can stay open ("Result: unknown until the trip").
 - **Fields:** episode `outline` (optional story outline), `notes` (loose notes; use `Planned:`, `Observed:`, `Question:` labels), `brief`, `targetSeconds`. Scene `purpose` (what the viewer should understand or feel), `description` (visible action), `voiceover` (VO intent/draft), `audio` (audio/music intent), `notes` (general/edit notes), `location`, `durationSeconds` (whole seconds, screen time), `status` (`draft`/`ready`, set by the creator), `filmDay`/`filmStop` (when it gets filmed: shooting day and stop; independent of story order, e.g. a cold open filmed late on day 1).
-- **Shots:** `addShot`/`updateShot`/`moveShot`/`deleteShot`. `priority` is `essential` or `optional`. Call `get_shot_and_cut_guide` and set `size`, `angle` and `movement` from that vocabulary when the framing matters (the printed pack shows them as pictograms); keep `framing` for free text such as "chest mount". Set a scene's `cutToNext` only as an editing intention, and only plan a match cut or J/L-cut when the shots it needs are on the list. Leave `captured` alone unless the creator reports filming; a captured shot is not reviewed footage.
+- **Shots:** `addShot`/`updateShot`/`moveShot`/`deleteShot`. `priority` is `essential` or `optional`. Call `get_shot_and_cut_guide` and set `size`, `angle` and `movement` from that vocabulary when the framing matters (the printed pack shows them as pictograms); keep `framing` for free text such as "chest mount". Set a scene's `cutToNext` only as an editing intention, and only plan a match cut or J/L-cut when the shots it needs are on the list. Leave shot `outcome` alone unless the creator or trip log reports it (`open` / `filmed` / `skipped` + optional `skipReason`, `journalRefs`); a filmed shot is not reviewed footage and a skipped shot has no footage. The legacy `captured` boolean still works (true = filmed, false = open).
 - **Kit list and gear per shot:** the episode's `gear` is the creator's kit list (cameras, lenses, supports/mounts, audio, light, power, storage). Assign gear to a shot with `updateShot` `fields: {gear: [gearIds]}`: usually one camera, plus the support/mount and the microphone that make the shot work. Use only gear on the list. If a shot really needs something that isn't there (a tripod for a locked-off shot, a wind cover for a coastal interview), don't add it silently: say so, add a `Question:` to the loose notes or a camera note, and let the creator decide. Add kit items with `addGear` only when the creator tells you what they own or are taking.
 - **Checklist:** `get_filming_checklist` with `order` `story`, `filming` (by filmDay/filmStop) or `location`.
 - **References:** `addLink` for web links; `upload_image` (base64 PNG/JPEG supplied by the creator) then `addImage`. Do not fetch arbitrary URLs into PlanB.

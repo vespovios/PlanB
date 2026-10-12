@@ -12,9 +12,9 @@ This repository implements **Delivery A** of the v0.3 brief in [`PlanB-Handoff/`
 - **Episodes:** each episode has a brief, an optional story outline (with an optional Setup/Desire/Conflict/Change/Result starter), loose notes, a target runtime and a draft/ready status.
 - **Scenes:** one ordered scene sequence, shown two ways:
   - **Timeline:** the approved layout. Scene details sit above left, shots above right, and timed blocks run along the bottom. Drag to reorder, drag an edge to resize, with buttons and keyboard shortcuts for the same actions. Includes a ruler, Fit and zoom.
-  - **Cards:** an ordered storyboard of cards showing a thumbnail, duration, draft/ready status and captured count. Phones always use this view.
+  - **Cards:** an ordered storyboard of cards showing a thumbnail, duration, draft/ready status and shot outcomes. Phones always use this view.
 - **Scene details:** title, duration, planning status, what happens, purpose, plus optional location, notes, voice-over, audio/music, references and a storyboard. Optional fields stay collapsed until used.
-- **Shot checklist:** untimed; each shot has framing, description, camera notes, essential/optional priority and a captured flag.
+- **Shot checklist:** untimed; each shot has framing, description, camera notes, essential/optional priority and an outcome: open ○, filmed ✓ or skipped ✕ (with an optional reason and links to trip-journal entries).
 - **References and storyboards:** PNG/JPEG image references and labelled links. Each scene has one simple storyboard drawing (freehand, arrow, rectangle, ellipse, text, select/move/resize, undo/redo) on a fixed 16:9 canvas. It is stored as editable JSON, and the server renders a matching PNG preview in the same revision.
 - **Filming checklist and print view:** story order, or grouped by location. It works on a phone and prints to paper or PDF.
 - **Revisions:** every save is a revision. Stale writes are rejected, and you can undo or restore from History; nothing is erased.

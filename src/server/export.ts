@@ -2,8 +2,8 @@
 // built from a single saved revision. No credentials or app URLs are embedded.
 import fs from 'node:fs';
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import { filmSlot } from '../shared/checklist.js';
-import { PLAN_SCHEMA_VERSION, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode } from '../shared/model.js';
+import { filmSlot, outcomeBox } from '../shared/checklist.js';
+import { PLAN_SCHEMA_VERSION, formatTime, outcomeCounts, outcomeSummary, type ShotOutcome, sceneNumber, sceneStarts, totalSeconds, type Episode } from '../shared/model.js';
 import { STORYBOARD_SCHEMA_VERSION, describeObjects } from '../shared/storyboard.js';
 import { CUT_TYPES, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term } from '../shared/vocab.js';
 import type { AssetStore } from './assets.js';
@@ -89,7 +89,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
         summary: describeObjects(sb.objects),
       };
     }
-    const { captured, total } = { captured: scene.shots.filter((s) => s.captured).length, total: scene.shots.length };
+    const counts = outcomeCounts(scene.shots);
     return {
       id: scene.id,
       number: sceneNumber(i),
@@ -108,8 +108,10 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
       cutToNext: scene.cutToNext ?? null,
       filmDay: scene.filmDay ?? null,
       filmStop: scene.filmStop ?? null,
-      capturedShots: captured,
-      totalShots: total,
+      capturedShots: counts.filmed,
+      skippedShots: counts.skipped,
+      openShots: counts.open,
+      totalShots: counts.total,
       shots: scene.shots.map((s, j) => ({ ...s, size: s.size ?? null, angle: s.angle ?? null, movement: s.movement ?? null, gear: s.gear ?? [], order: j })),
       attachments,
       storyboard,
@@ -122,7 +124,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
     exportedAt: new Date().toISOString(),
     generator: `PlanB ${appVersion}`,
     notes:
-      'Canonical PlanB planning data. Paths are relative to this file. "captured" means the creator reported filming a shot; it does not mean footage was reviewed. This is not a native editor project.',
+      'Canonical PlanB planning data. Paths are relative to this file. Shot "outcome": "open" = no outcome yet, "filmed" = the creator reported filming it (footage not reviewed), "skipped" = deliberately dropped, so no footage exists (see skipReason and journalRefs). "captured" mirrors outcome === "filmed". This is not a native editor project.',
     episode: {
       id: episode.id,
       revision: episode.revision,
@@ -161,11 +163,13 @@ type Plan = {
     audio: string;
     location: string;
     capturedShots: number;
+    skippedShots: number;
+    openShots: number;
     totalShots: number;
     cutToNext: string | null;
     filmDay: number | null;
     filmStop: number | null;
-    shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; gear: string[]; cameraNotes: string; priority: string; captured: boolean; id: string }[];
+    shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; gear: string[]; cameraNotes: string; priority: string; captured: boolean; outcome: ShotOutcome; skipReason: string; outcomeAt: string | null; journalRefs: string[]; id: string }[];
     attachments: ({ kind: 'link'; label: string; url: string; caption: string } | { kind: 'image'; label: string; file: string | null; caption: string })[];
     storyboard: { preview: string | null; document: string; description: string; summary: string } | null;
   }[];
@@ -198,7 +202,7 @@ export function planMarkdown(plan: Plan): string {
   for (const s of plan.scenes) {
     out.push(`### ${s.number} · ${s.title}`, '');
     out.push(
-      `\`${s.id}\` · ${formatTime(s.startSeconds)}–${formatTime(s.startSeconds + s.durationSeconds)} (${formatTime(s.durationSeconds)}) · ${s.status === 'ready' ? 'ready to film' : 'draft'} · captured ${s.capturedShots}/${s.totalShots}`,
+      `\`${s.id}\` · ${formatTime(s.startSeconds)}–${formatTime(s.startSeconds + s.durationSeconds)} (${formatTime(s.durationSeconds)}) · ${s.status === 'ready' ? 'ready to film' : 'draft'} · ${outcomeSummary({ filmed: s.capturedShots, skipped: s.skippedShots, open: s.openShots, total: s.totalShots })}`,
       '',
     );
     if (s.storyboard?.preview) out.push(`![Storyboard for ${s.title}](${s.storyboard.preview})`, '');
@@ -215,9 +219,10 @@ export function planMarkdown(plan: Plan): string {
       out.push('**Shots:**', '');
       s.shots.forEach((sh) => {
         const spec = [term(SHOT_SIZES, sh.size)?.abbr, term(SHOT_ANGLES, sh.angle)?.abbr, term(SHOT_MOVEMENTS, sh.movement)?.abbr].filter(Boolean).join(' ');
-        const meta = [spec, sh.framing, sh.priority, sh.captured ? 'captured (reported)' : 'not captured'].filter(Boolean).join(' · ');
+        const outcome = sh.outcome === 'filmed' ? 'filmed (reported)' : sh.outcome === 'skipped' ? `skipped${sh.skipReason ? `: ${sh.skipReason}` : ''}` : 'open';
+        const meta = [spec, sh.framing, sh.priority, outcome].filter(Boolean).join(' · ');
         const kit = sh.gear.map((id) => gearName.get(id)).filter(Boolean).join(', ');
-        out.push(`- [${sh.captured ? 'x' : ' '}] ${sh.description} — ${meta}${sh.cameraNotes ? ` — ${sh.cameraNotes}` : ''}${kit ? ` — gear: ${kit}` : ''}`);
+        out.push(`- ${outcomeBox(sh)} ${sh.description} — ${meta}${sh.journalRefs.length ? ` — journal: ${sh.journalRefs.join(', ')}` : ''}${sh.cameraNotes ? ` — ${sh.cameraNotes}` : ''}${kit ? ` — gear: ${kit}` : ''}`);
       });
       out.push('');
     }

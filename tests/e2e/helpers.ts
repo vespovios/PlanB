@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const CREATOR = { email: 'creator@example.com', password: 'creator-password-1' };
 export const SOMEONE = { email: 'someone@example.com', password: 'someone-password-1' };
@@ -63,4 +63,9 @@ export async function samplePngFile(): Promise<string> {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#7fb3d5"/><rect x="0" y="420" width="800" height="180" fill="#6b8e23"/><circle cx="650" cy="120" r="60" fill="#f4d03f"/></svg>`;
   await sharp(Buffer.from(svg)).png().toFile(file);
   return file;
+}
+
+/** The open/filmed/skipped button for the shot whose description matches. */
+export function outcome(scope: Page | Locator, description: RegExp, state: 'Open' | 'Filmed' | 'Skipped') {
+  return scope.getByRole('radiogroup', { name: new RegExp(`^Outcome: .*${description.source}`) }).getByRole('radio', { name: state, exact: true });
 }

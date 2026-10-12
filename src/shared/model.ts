@@ -53,6 +53,14 @@ export const GearItemSchema = z.object({
 });
 export type GearItem = z.infer<typeof GearItemSchema>;
 
+/**
+ * What happened to a shot on the shoot. open: no outcome recorded yet (still possible).
+ * filmed: the creator reports footage was captured (not that it was reviewed).
+ * skipped: deliberately dropped from this shoot; resolved, but there is no footage.
+ */
+export const ShotOutcome = z.enum(['open', 'filmed', 'skipped']);
+export type ShotOutcome = z.infer<typeof ShotOutcome>;
+
 export const ShotSchema = z.object({
   id: ShotId,
   description: text(LIMITS.shortText * 4).min(1, 'A shot needs a short description'),
@@ -65,6 +73,14 @@ export const ShotSchema = z.object({
   /** Gear from the episode's kit list used for this shot (camera, support, mic…). */
   gear: z.array(GearId).max(12).default([]),
   priority: ShotPriority.default('essential'),
+  outcome: ShotOutcome.default('open'),
+  /** Optional short reason, only kept while the shot is skipped (e.g. "Wind too strong"). */
+  skipReason: text(160).default(''),
+  /** When the current outcome was recorded (server time); null while open. */
+  outcomeAt: z.string().max(40).nullable().default(null),
+  /** References to trip-journal entries about this shot (IDs or URLs from the Trip Log). */
+  journalRefs: z.array(text(300).trim().min(1)).max(20).default([]),
+  /** Legacy mirror of outcome === 'filmed', kept for older clients and agents. */
   captured: z.boolean().default(false),
 });
 export type Shot = z.infer<typeof ShotSchema>;
@@ -167,6 +183,7 @@ export interface EpisodeSummary {
   coverAssetIds: string[];
   shotCount: number;
   capturedCount: number;
+  skippedCount: number;
   storyboardCount: number;
 }
 
@@ -248,6 +265,45 @@ export function parseTime(input: string): number | null {
   return parts.reduce((acc, p) => acc * 60 + Number(p), 0);
 }
 
-export function capturedCount(scene: Pick<Scene, 'shots'>): { captured: number; total: number } {
-  return { captured: scene.shots.filter((s) => s.captured).length, total: scene.shots.length };
+export interface OutcomeCounts {
+  filmed: number;
+  skipped: number;
+  open: number;
+  total: number;
+}
+
+export function outcomeCounts(shots: Pick<Shot, 'outcome'>[]): OutcomeCounts {
+  const c = { filmed: 0, skipped: 0, open: 0, total: shots.length };
+  for (const s of shots) c[s.outcome ?? 'open']++;
+  return c;
+}
+
+/** "29 filmed · 10 skipped · 7 open" (zero parts left out, except open when nothing is recorded). */
+export function outcomeSummary(c: OutcomeCounts): string {
+  if (!c.total) return 'no shots';
+  const parts = [c.filmed && `${c.filmed} filmed`, c.skipped && `${c.skipped} skipped`, c.open && `${c.open} open`].filter(Boolean);
+  return parts.join(' · ');
+}
+
+/** Per scene: filmed (= captured), skipped, open and total. Skipped counts as resolved, never as filmed. */
+export function capturedCount(scene: Pick<Scene, 'shots'>): { captured: number; total: number } & OutcomeCounts {
+  const c = outcomeCounts(scene.shots);
+  return { captured: c.filmed, ...c };
+}
+
+/**
+ * Brings documents saved before shot outcomes existed up to date (captured → outcome) and keeps
+ * the legacy `captured` flag in step. Mutates and returns the document.
+ */
+export function normaliseDoc<T extends { scenes: { shots: Partial<Shot>[] }[] }>(doc: T): T {
+  for (const scene of doc.scenes ?? []) {
+    for (const shot of scene.shots ?? []) {
+      if (!shot.outcome) shot.outcome = shot.captured ? 'filmed' : 'open';
+      shot.captured = shot.outcome === 'filmed';
+      shot.skipReason ??= '';
+      shot.outcomeAt ??= null;
+      shot.journalRefs ??= [];
+    }
+  }
+  return doc;
 }

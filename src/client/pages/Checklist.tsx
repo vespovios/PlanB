@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { buildChecklist, filmSlot, type ChecklistOrder } from '../../shared/checklist';
-import { capturedCount, formatTime, totalSeconds } from '../../shared/model';
+import { capturedCount, formatTime, outcomeCounts, outcomeSummary, totalSeconds, type Shot } from '../../shared/model';
+import { JournalRefs, OutcomeControl, SkipReason } from '../components/Outcome';
 import { assetUrl, type User } from '../api';
 import { Shell } from '../components/Shell';
 import { useEpisodeSync } from '../sync';
@@ -24,6 +25,8 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
   const hasSlots = episode.scenes.some((s) => s.filmDay || s.filmStop);
   const byLocation = order === 'location';
   const allShots = episode.scenes.flatMap((s) => s.shots);
+  const setOutcome = (sceneId: string, shot: Shot, fields: Partial<Shot>) =>
+    engine.queue({ op: 'updateShot', sceneId, shotId: shot.id, fields: fields as never });
 
   return (
     <Shell user={user} onSignOut={onSignOut} episodeId={id} tab="checklist">
@@ -46,11 +49,11 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
           <p className="eyebrow">Filming checklist</p>
           <h1>{episode.title}</h1>
           <p className="muted">
-            {episode.scenes.length} scenes · planned {formatTime(totalSeconds(episode))} · {allShots.filter((s) => s.captured).length}/{allShots.length} shots reported captured ·
+            {episode.scenes.length} scenes · planned {formatTime(totalSeconds(episode))} · {outcomeSummary(outcomeCounts(allShots))} ·
             revision {episode.revision} · {new Date(episode.updatedAt).toLocaleString()}
           </p>
           <p className="muted small print-note">
-            Captured = reported as filmed, not reviewed. Scene numbers follow story order{order === 'filming' ? '; listed in filming order (day, then stop)' : ''}.
+            ○ open · ✓ filmed (reported, not reviewed) · ✕ skipped on purpose (no footage). Scene numbers follow story order{order === 'filming' ? '; listed in filming order (day, then stop)' : ''}.
           </p>
           <div className="checklist-options no-print">
             <Segmented<ChecklistOrder>
@@ -82,7 +85,7 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
             {byLocation && <h2 className="group-title">📍 {g.label ?? 'No location given'}</h2>}
             {order === 'filming' && <h2 className="group-title">🎬 {g.label ?? 'No filming day set'}</h2>}
             {g.scenes.map(({ number, start, scene }) => {
-              const { captured, total } = capturedCount(scene);
+              const counts = capturedCount(scene);
               return (
                 <article key={scene.id} className="checklist-scene">
                   <header>
@@ -94,7 +97,7 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
                         ? `Edit position ${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)} on screen`
                         : `${formatTime(start)}–${formatTime(start + scene.durationSeconds)} · ${formatTime(scene.durationSeconds)}`}{' '}
                       ·{' '}
-                      {scene.status === 'ready' ? 'Ready to film' : 'Draft'} · {captured}/{total} captured
+                      {scene.status === 'ready' ? 'Ready to film' : 'Draft'} · {outcomeSummary(counts)}
                       {filmSlot(scene) && <> · <b>{filmSlot(scene)}</b></>} · <code>{scene.id}</code>
                     </span>
                   </header>
@@ -143,28 +146,24 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
                   )}
                   <ul className="checklist-shots">
                     {scene.shots.map((shot) => (
-                      <li key={shot.id} className={shot.captured ? 'captured' : ''}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={shot.captured}
-                            onChange={(e) => engine.queue({ op: 'updateShot', sceneId: scene.id, shotId: shot.id, fields: { captured: e.target.checked } })}
-                          />
-                          <span className="print-box" aria-hidden>
-                            {shot.captured ? '☑' : '☐'}
-                          </span>
-                          <span className="shot-text">
-                            {shot.framing && <strong>{shot.framing}: </strong>}
-                            {shot.description}
-                            {shot.cameraNotes && <span className="muted as-block small">{shot.cameraNotes}</span>}
-                            {(shot.gear ?? []).length > 0 && (
-                              <span className="muted as-block small">
-                                🎒 {(shot.gear ?? []).map((id) => (episode.gear ?? []).find((g) => g.id === id)?.name).filter(Boolean).join(' · ')}
-                              </span>
-                            )}
-                          </span>
-                          <span className={`priority-tag ${shot.priority}`}>{shot.priority === 'essential' ? 'Essential' : 'Optional'}</span>
-                        </label>
+                      <li key={shot.id} className={`is-${shot.outcome}`}>
+                        <OutcomeControl shot={shot} onChange={(f) => setOutcome(scene.id, shot, f)} />
+                        <span className="print-box" aria-hidden>
+                          {shot.outcome === 'filmed' ? '☑' : shot.outcome === 'skipped' ? '☒' : '☐'}
+                        </span>
+                        <span className="shot-text">
+                          {shot.framing && <strong>{shot.framing}: </strong>}
+                          {shot.description}
+                          {shot.cameraNotes && <span className="muted as-block small">{shot.cameraNotes}</span>}
+                          {(shot.gear ?? []).length > 0 && (
+                            <span className="muted as-block small">
+                              🎒 {(shot.gear ?? []).map((id) => (episode.gear ?? []).find((g) => g.id === id)?.name).filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                          <SkipReason shot={shot} onChange={(skipReason) => setOutcome(scene.id, shot, { outcome: 'skipped', skipReason })} />
+                          <JournalRefs refs={shot.journalRefs} />
+                        </span>
+                        <span className={`priority-tag ${shot.priority}`}>{shot.priority === 'essential' ? 'Essential' : 'Optional'}</span>
                       </li>
                     ))}
                     {!scene.shots.length && <li className="muted small">No shots listed.</li>}
