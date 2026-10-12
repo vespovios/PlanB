@@ -79,6 +79,85 @@ Other admin commands: `user:list`, `user:password --email …` (resets a passwor
 - Every episode, asset, export and MCP call is checked against the owning account. Other accounts get "not found".
 - Keep `.env`, `data/` and `backups/` out of source control (they are in `.gitignore`).
 
+## VPS deployment without Docker (behind an existing nginx)
+
+Use this route when the server already runs nginx on ports 80/443 for other sites, so PlanB's Caddy container can't take those ports. PlanB runs as a systemd service on `127.0.0.1:8787`, and nginx with a certbot certificate sits in front of it. The current production install, **planb.mototwin.app**, runs this way.
+
+The files below are in [`deploy/native/`](../deploy/native/). They are exact copies of the production ones, except that the domain is `planb.example.com`.
+
+| Path on the server | What it holds |
+| --- | --- |
+| `/opt/planb/app` | The code and its build (`dist/`, `node_modules/`, `docs/`) |
+| `/opt/planb/node` | A private Node 22. The system Node and other apps are left alone. |
+| `/var/lib/planb` | `planb.db` and `assets/`: **the data** |
+| `/var/backups/planb` | Backup archives |
+| `/etc/systemd/system/planb.service` | The app service ([planb.service](../deploy/native/planb.service)) |
+| `/etc/systemd/system/planb-backup.{service,timer}` | A nightly backup at about 03:15 UTC that keeps 14 archives ([backup.sh](../deploy/native/backup.sh)) |
+| `/etc/nginx/sites-available/planb` | The reverse proxy ([nginx-planb.conf](../deploy/native/nginx-planb.conf)) |
+
+### First install
+
+These steps assume Ubuntu 24.04 with nginx and certbot already installed, and an SSH user with sudo. Commands marked *(Mac)* run in the PlanB repo on your computer. Everything else runs on the server.
+
+1. **DNS.** Add an A record for the subdomain pointing at the server, and check that `dig +short planb.example.com` returns the server's IP.
+2. **User, folders and packages.** `build-essential` is needed because `better-sqlite3` compiles from source. `fonts-dejavu-core` is needed so storyboard text renders in PNG previews.
+   ```bash
+   sudo useradd --system --home-dir /var/lib/planb --shell /usr/sbin/nologin planb
+   sudo mkdir -p /opt/planb/app /var/lib/planb /var/backups/planb
+   sudo chown -R planb:planb /opt/planb /var/lib/planb /var/backups/planb
+   sudo chmod 750 /var/lib/planb /var/backups/planb
+   sudo apt-get install -y build-essential fonts-dejavu-core fontconfig
+   ```
+3. **Private Node 22.** Pick the latest v22 from <https://nodejs.org/dist/>. Use `linux-x64` instead of `linux-arm64` on Intel/AMD servers.
+   ```bash
+   V=v22.23.3; A=linux-arm64
+   cd /tmp && curl -fsSLO https://nodejs.org/dist/$V/node-$V-$A.tar.xz
+   curl -fsSL https://nodejs.org/dist/$V/SHASUMS256.txt | grep " node-$V-$A.tar.xz$" | sha256sum -c -
+   sudo mkdir -p /opt/planb/node && sudo tar -xJf node-$V-$A.tar.xz -C /opt/planb/node --strip-components=1
+   ```
+4. **Code** *(Mac)*. This ships only committed files, so local data, `.env` and the Story Starter Kit never leave your computer.
+   ```bash
+   git archive HEAD | ssh <server> 'sudo -u planb tar -xf - -C /opt/planb/app'
+   ```
+5. **Build.**
+   ```bash
+   cd /opt/planb/app
+   sudo -u planb env PATH=/opt/planb/node/bin:/usr/bin:/bin HOME=/opt/planb npm_config_cache=/opt/planb/.npm-cache \
+     sh -c 'npm ci && npm run build && npm prune --omit=dev'
+   ```
+6. **Service and backups.** Copy the four files from `deploy/native/` to the paths in the table above, and set `PLANB_PUBLIC_URL` in `planb.service`. Then:
+   ```bash
+   sudo chmod 755 /opt/planb/backup.sh
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now planb planb-backup.timer
+   curl -s http://127.0.0.1:8787/api/health        # {"ok":true,…}
+   ```
+7. **nginx and HTTPS.** Set `server_name` in the copied `nginx-planb.conf`. The certificate then renews with certbot's existing timer.
+   ```bash
+   sudo cp nginx-planb.conf /etc/nginx/sites-available/planb
+   sudo ln -s /etc/nginx/sites-available/planb /etc/nginx/sites-enabled/planb
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d planb.example.com --redirect
+   ```
+   If certbot fails with `No such authorization`, wait a minute and run it again. That is a temporary Let's Encrypt error.
+8. **Data.** Either create an account, or bring an existing install across.
+   - To create an account: `cd /opt/planb/app && sudo -u planb env PLANB_DATA_DIR=/var/lib/planb /opt/planb/node/bin/node dist/server/cli.js user:add --email you@example.com --name "You"`.
+   - To bring an existing install across, run a `backup` there, copy the archive to `/var/backups/planb/`, then on the server stop PlanB, restore and start it again:
+     ```bash
+     sudo systemctl stop planb
+     cd /opt/planb/app && sudo -u planb env PLANB_DATA_DIR=/var/lib/planb /opt/planb/node/bin/node dist/server/cli.js restore --from /var/backups/planb/<file>.tar.gz --yes
+     sudo systemctl start planb
+     ```
+     Accounts, episodes, history and agent tokens all come across. Agents only need the new URL.
+
+Logs: `journalctl -u planb -f`. Status: `systemctl status planb`.
+
+Run other CLI commands (`user:list`, `user:password`, `token:create`, `verify`, …) from `/opt/planb/app` like this:
+
+```bash
+sudo -u planb env PLANB_DATA_DIR=/var/lib/planb /opt/planb/node/bin/node dist/server/cli.js <command>
+```
+
 ## Connecting your agent
 
 1. In PlanB, open **Settings → Agent connections**, enter a name (for example "Claude"), and click **Create token**. Copy the token; it is shown once.
@@ -111,7 +190,7 @@ Each archive contains `manifest.json`, `planb.db` (with full revision history fo
 
 Suggested schedule: a daily cron job on the host running the backup command, plus an off-site copy of `backups/` (for example with `rclone` or your provider's snapshots). Test a restore occasionally with `scripts/docker-smoke.sh`, or by restoring into a scratch directory.
 
-Without Docker: `PLANB_DATA_DIR=/srv/planb/data node dist/server/cli.js backup --out …`, with the same `restore` command.
+Without Docker: `PLANB_DATA_DIR=/srv/planb/data node dist/server/cli.js backup --out …`, with the same `restore` command. The [nginx install](#vps-deployment-without-docker-behind-an-existing-nginx) already has a nightly backup timer. To run one now, use `sudo systemctl start planb-backup.service`. Archives land in `/var/backups/planb/`, on the same disk, so copy them off the server too.
 
 ## Upgrades
 
@@ -120,5 +199,32 @@ docker compose exec planb node dist/server/cli.js backup --out /backups/pre-upgr
 git pull                        # or copy the new release
 docker compose up -d --build
 ```
+
+For the nginx install, run these steps in order:
+
+1. *(Mac)* Commit the change.
+2. Back up first:
+   ```bash
+   ssh <server> 'sudo systemctl start planb-backup.service'
+   ```
+3. *(Mac)* Ship the new code:
+   ```bash
+   git archive HEAD | ssh <server> 'sudo -u planb tar -xf - -C /opt/planb/app'
+   ```
+4. Build:
+   ```bash
+   cd /opt/planb/app && sudo -u planb env PATH=/opt/planb/node/bin:/usr/bin:/bin HOME=/opt/planb npm_config_cache=/opt/planb/.npm-cache \
+     sh -c 'npm ci && npm run build && npm prune --omit=dev'
+   ```
+5. Restart:
+   ```bash
+   sudo systemctl restart planb
+   ```
+6. Check it's back:
+   ```bash
+   curl -s https://planb.example.com/api/health
+   ```
+
+`git archive` overwrites changed files but doesn't delete files that were removed from the repo. That is harmless for PlanB, because the build output is regenerated each time.
 
 Database migrations are append-only and run automatically on start. Asset files are immutable and keyed by ID, and revisions refer to them by ID, so upgrades never rewrite or rename assets. Undo history stays valid across upgrades. If an upgrade misbehaves, restore the pre-upgrade backup with the previous image.

@@ -23,7 +23,7 @@ This repository implements **Delivery A** of the v0.3 brief in [`PlanB-Handoff/`
 - **Kit list:** each episode lists the gear you're taking; each shot can name the camera, mount and mic it needs (the agent only suggests from your list). The production pack adds a packing checklist and a gear column.
 - **Shot & cut vocabulary:** shots can carry a size (EWS…ECU, insert), angle and movement, and each scene an intended cut into the next (J-cut, match cut, montage…). The same definitions are used in the app, the printed pack, the export and the agent tools.
 - **Download ZIP:** a portable bundle containing `plan.json`, `plan.md`, `assets/` and `storyboards/`, all from one saved revision. It is for handing the plan to other people or tools; it is not re-imported into PlanB.
-- **Deployment:** Docker + Caddy (HTTPS), with backup/restore that keeps the database and assets together.
+- **Deployment:** Docker + Caddy (HTTPS), or a systemd service behind an existing nginx. Both use backup/restore that keeps the database and assets together.
 
 ## Stack (and why)
 
@@ -74,7 +74,7 @@ src/shared/   model, change operations, storyboard schema + SVG renderer, checkl
 src/server/   Fastify app, auth, episodes/revisions, assets, export, MCP adapter, admin CLI
 src/client/   React app: planner (timeline, cards, scene details, shots, references), storyboard editor, checklist
 tests/        Vitest (server, MCP, persistence) and Playwright (tests/e2e)
-deploy/       Caddyfile
+deploy/       Caddyfile; native/ holds the systemd units, nightly backup and nginx site
 branding/     source logo (PLANB-LOGO.png) and README strip; scripts/brand-assets.mjs regenerates the web logo and icons
 docs/         user and operator documentation
 PlanB-Handoff/  the original v0.3 brief (unchanged)

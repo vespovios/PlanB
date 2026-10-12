@@ -1,0 +1,13 @@
+[Unit]
+Description=PlanB daily backup
+
+[Service]
+Type=oneshot
+User=planb
+Group=planb
+ExecStart=/opt/planb/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/planb /var/backups/planb

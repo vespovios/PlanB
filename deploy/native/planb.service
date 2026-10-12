@@ -1,0 +1,29 @@
+[Unit]
+Description=PlanB episode planner
+After=network.target
+
+[Service]
+Type=simple
+User=planb
+Group=planb
+WorkingDirectory=/opt/planb/app
+Environment=NODE_ENV=production
+Environment=PLANB_DATA_DIR=/var/lib/planb
+Environment=PLANB_STATIC_DIR=/opt/planb/app/dist/client
+Environment=PLANB_HOST=127.0.0.1
+Environment=PLANB_PORT=8787
+Environment=PLANB_PUBLIC_URL=https://planb.example.com
+Environment=PLANB_SECURE_COOKIES=true
+Environment=PLANB_TRUST_PROXY=true
+ExecStart=/opt/planb/node/bin/node dist/server/main.js
+Restart=on-failure
+RestartSec=3
+# Hardening: PlanB only needs to write its data and backup folders.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/planb /var/backups/planb
+
+[Install]
+WantedBy=multi-user.target
