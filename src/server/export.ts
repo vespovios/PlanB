@@ -124,7 +124,7 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
     exportedAt: new Date().toISOString(),
     generator: `PlanB ${appVersion}`,
     notes:
-      'Canonical PlanB planning data. Paths are relative to this file. Shot "outcome": "open" = no outcome yet, "filmed" = the creator reported filming it (footage not reviewed), "skipped" = deliberately dropped, so no footage exists (see skipReason and journalRefs). "captured" mirrors outcome === "filmed". This is not a native editor project.',
+      'Canonical PlanB planning data. Paths are relative to this file. Shot "outcome": "open" = no outcome yet, "filmed" = the creator reported filming it (footage not reviewed), "skipped" = deliberately dropped, so no footage exists (see skipReason and journalRefs). "captured" mirrors outcome === "filmed". Outcomes describe footage only, not whether an event happened; take that from the trip journal. This is not a native editor project.',
     episode: {
       id: episode.id,
       revision: episode.revision,
