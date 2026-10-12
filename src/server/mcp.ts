@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { checklistMarkdown } from '../shared/checklist.js';
+import { checklistMarkdown, checklistOrder } from '../shared/checklist.js';
 import { formatTime, sceneStarts, totalSeconds, type Episode } from '../shared/model.js';
 import { OperationSchema } from '../shared/ops.js';
 import { describeObjects } from '../shared/storyboard.js';
@@ -41,6 +41,9 @@ export function agentEpisodeView(ep: Episode) {
       ...s,
       position: i,
       startSeconds: starts[i],
+      // Filming order (independent of story order); null when not planned yet.
+      filmDay: s.filmDay ?? null,
+      filmStop: s.filmStop ?? null,
       storyboard: s.storyboard
         ? {
             id: s.storyboard.id,
@@ -117,7 +120,7 @@ export function createMcpServer(services: Services, principal: Principal, appVer
 Each operation is an object whose "op" key names the operation, for example:
 [{"op":"updateEpisode","fields":{"outline":"…"}},{"op":"updateShot","sceneId":"sc_…","shotId":"sh_…","fields":{"size":"ws","angle":"eye","movement":"static"}},{"op":"updateScene","sceneId":"sc_…","fields":{"cutToNext":"jcut"}}]
 Operations: updateEpisode{fields:{title,brief,outline,notes,targetSeconds,status}}, addScene{scene:{title,durationSeconds,...optional fields, shots?}, index?}, updateScene{sceneId,fields}, deleteScene{sceneId}, restoreDeletedScene{sceneId,index?}, moveScene{sceneId,index}, addShot{sceneId,shot:{description,framing?,cameraNotes?,priority?},index?}, updateShot{sceneId,shotId,fields}, deleteShot, moveShot{sceneId,shotId,index}, addLink{sceneId,label,url,caption?}, addImage{sceneId,assetId,label?,caption?} (after upload_image), updateAttachment, removeAttachment, saveStoryboard{sceneId,storyboard} (see get_storyboard_schema), deleteStoryboard{sceneId}.
-Only include fields you intend to change. Scene fields: title, durationSeconds (whole seconds), status (draft|ready), description (visible action), purpose (what the viewer should understand or feel), notes (general/edit notes), voiceover (VO intent/text), audio (audio/music intent), location, thumbnailAttachmentId, cutToNext (editing intention into the next scene).
+Only include fields you intend to change. Scene fields: title, durationSeconds (whole seconds), status (draft|ready), description (visible action), purpose (what the viewer should understand or feel), notes (general/edit notes), voiceover (VO intent/text), audio (audio/music intent), location, thumbnailAttachmentId, cutToNext (editing intention into the next scene), filmDay and filmStop (filming order: shooting day 1, 2, … and stop within the day; independent of story order; null clears).
 Shot fields: description, framing (free text), size, angle, movement (keys from get_shot_and_cut_guide; null = unspecified), cameraNotes, gear (array of kit-list IDs), priority (essential|optional), captured.
 Kit list: addGear{id?, item:{name,kind,notes?}} (optional id like "ge_tripod01" goes on the operation, not inside item, so later operations in the same batch can reference it; kind: camera|lens|support|audio|light|power|storage|other), updateGear{gearId,fields}, removeGear{gearId} (also removes it from shots). Only assign gear that is in the episode's kit list; never assume the creator owns gear they have not listed — ask instead.`,
       inputSchema: {
@@ -138,13 +141,18 @@ Kit list: addGear{id?, item:{name,kind,notes?}} (optional id like "ge_tripod01" 
     'get_filming_checklist',
     {
       title: 'Filming checklist',
-      description: 'The filming checklist derived from the saved scenes and shots, in story order or grouped by location (grouping never changes story order).',
-      inputSchema: { episodeId, groupByLocation: z.boolean().optional() },
+      description:
+        'The filming checklist derived from the saved scenes and shots. order: "story" (default), "location" (grouped by location) or "filming" (by scene filmDay, then filmStop). None of these change the story order.',
+      inputSchema: {
+        episodeId,
+        order: z.enum(['story', 'location', 'filming']).optional(),
+        groupByLocation: z.boolean().optional().describe('Deprecated; same as order "location".'),
+      },
     },
-    async ({ episodeId, groupByLocation }) => {
+    async ({ episodeId, order, groupByLocation }) => {
       try {
         const ep = episodes.get(principal, episodeId);
-        return { content: [{ type: 'text' as const, text: `Revision ${ep.revision}\n\n${checklistMarkdown(ep, groupByLocation)}` }] };
+        return { content: [{ type: 'text' as const, text: `Revision ${ep.revision}\n\n${checklistMarkdown(ep, checklistOrder(order ?? groupByLocation))}` }] };
       } catch (e) {
         return failure(e);
       }

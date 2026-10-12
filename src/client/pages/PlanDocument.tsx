@@ -3,7 +3,7 @@
 // banners, a checkable shot list with size/angle/movement, a storyboard board, and a
 // shot & cut guide) adapted for a solo creator filming on the road.
 import { useMemo, useState, type ReactNode } from 'react';
-import { buildChecklist } from '../../shared/checklist';
+import { buildChecklist, filmSlot, type ChecklistOrder } from '../../shared/checklist';
 import { parseFiveLines } from '../../shared/outline';
 import { GEAR_KINDS, capturedCount, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode, type GearItem, type ImageAttachment, type Scene } from '../../shared/model';
 import { GEAR_KIND_LABELS } from '../planner/KitList';
@@ -56,7 +56,7 @@ function sceneColours(episode: Episode) {
 export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: User; onSignOut: () => void }) {
   const { episode, loadError } = useEpisodeSync(id);
   const [on, setOn] = useState<Record<Section, boolean>>({ cover: true, kit: true, story: true, shots: true, board: true, breakdown: true, guides: true, notes: false });
-  const [byLocation, setByLocation] = useState(false);
+  const [order, setOrder] = useState<ChecklistOrder>('story');
   const [scenePerPage, setScenePerPage] = useState(false);
   const [references, setReferences] = useState(true);
   const colours = useMemo(() => (episode ? sceneColours(episode) : null), [episode]);
@@ -97,9 +97,13 @@ export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: Us
         </div>
         <div className="pk-option-group">
           <span className="pk-option-title">Layout</span>
-          <label className="check">
-            <input type="checkbox" checked={byLocation} onChange={(e) => setByLocation(e.target.checked)} />
-            <span>Shot list in filming order (grouped by location)</span>
+          <label className="pk-select">
+            <span>Shot list order</span>
+            <select value={order} onChange={(e) => setOrder(e.target.value as ChecklistOrder)}>
+              <option value="story">Story order</option>
+              <option value="filming">Filming order (day, then stop)</option>
+              <option value="location">Grouped by location</option>
+            </select>
           </label>
           <label className="check">
             <input type="checkbox" checked={scenePerPage} onChange={(e) => setScenePerPage(e.target.checked)} />
@@ -127,9 +131,10 @@ export function PlanDocumentPage({ id, user, onSignOut }: { id: string; user: Us
 
         {on.shots && (
           <PkSection title="Shot list" kicker="On location" note={`${essential} essential · ${shots.length - essential} optional · ★ = essential · tick when filmed (captured ≠ reviewed)`}>
-            {buildChecklist(episode, byLocation).map((group, gi) => (
+            {buildChecklist(episode, order).map((group, gi) => (
               <div key={gi} className="pk-shot-group">
-                {byLocation && <h3 className="pk-group-title">📍 {group.location ?? 'No location given'}</h3>}
+                {order === 'location' && <h3 className="pk-group-title">📍 {group.label ?? 'No location given'}</h3>}
+                {order === 'filming' && <h3 className="pk-group-title">🎬 {group.label ?? 'No filming day set'}</h3>}
                 {group.scenes.map(({ scene, index, start }) => (
                   <ShotTable key={scene.id} scene={scene} index={index} start={start} colour={colours.of(scene)} cols={cols} gearById={gearById} />
                 ))}
@@ -362,6 +367,7 @@ function ShotTable({ scene, index, start, colour, cols, gearById }: { scene: Sce
         </span>
       </div>
       <div className="pk-banner-sub">
+        {filmSlot(scene) && <span>🎬 {filmSlot(scene)}</span>}
         {scene.location && <span>📍 {clip(scene.location, 90)}</span>}
         {scene.purpose && <span>◎ {clip(scene.purpose, 160)}</span>}
         {scene.audio && <span>♪ {clip(scene.audio, 140)}</span>}

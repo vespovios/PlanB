@@ -9,6 +9,7 @@ import { Icon, Ring, sceneColour } from '../components/Icon';
 import { ShotSizeIcon } from '../components/ShotIcons';
 import { useMediaQuery } from '../components/ui';
 import { sceneThumbnail } from './Cards';
+import { filmSlot } from '../../shared/checklist';
 import { ShotRow } from './Shots';
 import { href, navigate } from '../router';
 
@@ -21,12 +22,14 @@ interface Props {
   selectedId: string | null;
   setSelectedId: (id: string) => void;
   onEditSketch: (sceneId: string) => void;
+  /** Gear filter is kept by the episode page so the Kit tab can open "shots using X". */
+  gearFilter: string;
+  setGearFilter: (gearId: string) => void;
 }
 
-export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSketch }: Props) {
+export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSketch, gearFilter, setGearFilter }: Props) {
   const mobile = useMediaQuery('(max-width: 760px)');
   const [filter, setFilter] = useState<Filter>('all');
-  const [gearFilter, setGearFilter] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const scenes = episode.scenes;
@@ -35,6 +38,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
   const starts = sceneStarts(episode);
   const gear = episode.gear ?? [];
   const gearName = new Map(gear.map((g) => [g.id, g.name]));
+  const gearMatches = (s: Scene) => (gearFilter ? s.shots.filter((sh) => (sh.gear ?? []).includes(gearFilter)).length : null);
 
   if (!scene) {
     return (
@@ -136,9 +140,17 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
       <div className="shots-mobile">
         <div className="scene-strip" role="tablist" aria-label="Scenes">
           {scenes.map((s, i) => (
-            <button key={s.id} type="button" role="tab" aria-selected={i === index} className={i === index ? 'on' : ''} onClick={() => (setSelectedId(s.id), setEditing(null))}>
+            <button
+              key={s.id}
+              type="button"
+              role="tab"
+              aria-selected={i === index}
+              className={`${i === index ? 'on' : ''} ${gearMatches(s) === 0 ? 'no-match' : ''}`}
+              onClick={() => (setSelectedId(s.id), setEditing(null))}
+            >
               <span className="scene-dot" style={{ background: sceneColour(i) }} />
               {sceneNumber(i)}
+              {!!gearMatches(s) && <span className="match-count">{gearMatches(s)}</span>}
             </button>
           ))}
         </div>
@@ -187,9 +199,15 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
         <ol>
           {scenes.map((s, i) => {
             const c = capturedCount(s);
+            const matches = gearMatches(s);
             return (
               <li key={s.id}>
-                <button type="button" className={`scene-pane-item ${i === index ? 'on' : ''}`} aria-current={i === index} onClick={() => (setSelectedId(s.id), setEditing(null))}>
+                <button
+                  type="button"
+                  className={`scene-pane-item ${i === index ? 'on' : ''} ${matches === 0 ? 'no-match' : ''}`}
+                  aria-current={i === index}
+                  onClick={() => (setSelectedId(s.id), setEditing(null))}
+                >
                   <span className="scene-bar" style={{ background: sceneColour(i) }} />
                   <span className="scene-pane-text">
                     <b>
@@ -197,6 +215,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                     </b>
                     <span>
                       {formatTime(s.durationSeconds)} · {s.shots.length} shot{s.shots.length === 1 ? '' : 's'}
+                      {matches ? <b className="match-count">{matches} with {gearName.get(gearFilter)}</b> : null}
                     </span>
                   </span>
                   <Ring value={c.total ? c.captured / c.total : 0} size={22} stroke={2.6} label={`${c.captured} of ${c.total} captured`} />
@@ -220,29 +239,32 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
               <span>
                 <Icon name="clock" size={14} /> {formatTime(scene.durationSeconds)}
               </span>
-              {scene.location && (
-                <span title={scene.location}>
-                  <Icon name="pin" size={14} /> {scene.location}
-                </span>
-              )}
+              {filmSlot(scene) && <span>🎬 {filmSlot(scene)}</span>}
               <span className={`pill ${scene.status === 'ready' ? 'green' : 'amber'}`}>
                 <i />
                 {scene.status === 'ready' ? 'Ready to film' : 'Draft'}
               </span>
+              <span className="meta-actions">
+                <button type="button" className="btn small" onClick={() => onEditSketch(scene.id)}>
+                  <Icon name="pencil" size={15} /> {scene.storyboard ? 'Edit sketch' : 'Draw sketch'}
+                </button>
+                <button type="button" className="btn small" onClick={() => navigate(href.episode(episode.id, 'plan'))}>
+                  <Icon name="timeline" size={15} /> Open in planner
+                </button>
+              </span>
             </div>
+            {/* Location/route text can be long: give it its own wrapping line instead of a clipped chip. */}
+            {scene.location && (
+              <p className="scene-location">
+                <Icon name="pin" size={15} />
+                <span>{scene.location}</span>
+              </p>
+            )}
             {scene.purpose && (
               <p className="scene-purpose">
                 <b>Why it belongs:</b> {scene.purpose}
               </p>
             )}
-            <div className="row wrap">
-              <button type="button" className="btn small" onClick={() => onEditSketch(scene.id)}>
-                <Icon name="pencil" size={16} /> {scene.storyboard ? 'Edit sketch' : 'Draw sketch'}
-              </button>
-              <button type="button" className="btn small" onClick={() => navigate(href.episode(episode.id, 'plan'))}>
-                <Icon name="timeline" size={16} /> Open in planner
-              </button>
-            </div>
           </div>
         </header>
         {filters}
@@ -252,8 +274,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
               <th className="col-check" aria-label="Captured" />
               <th className="col-ref">Shot</th>
               <th>Description</th>
-              <th className="col-spec">Size · angle · move</th>
-              <th className="col-gear">Gear</th>
+              <th className="col-setup">Setup &amp; gear</th>
               <th className="col-pri">Priority</th>
             </tr>
           </thead>
@@ -277,19 +298,22 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                     <input type="checkbox" checked={shot.captured} onChange={(e) => update(shot, { captured: e.target.checked })} aria-label={`Captured: ${shot.description}`} />
                   </td>
                   <td className="col-ref">{shotRef(index, j)}</td>
-                  <td>
+                  <td className="col-desc">
                     {shot.framing && <b className="shot-framing-text">{shot.framing}</b>}
                     <span className="shot-desc-text">{shot.description}</span>
-                    {shot.cameraNotes && <span className="shot-notes-text">{shot.cameraNotes}</span>}
+                    {/* Camera notes stay folded until the shot is opened. */}
+                    {shot.cameraNotes && editing !== shot.id && (
+                      <span className="shot-notes-hint" title={shot.cameraNotes}>
+                        <Icon name="notes" size={13} /> Camera notes
+                      </span>
+                    )}
                   </td>
-                  <td className="col-spec">
+                  <td className="col-setup">
                     <span className="spec-cell">
                       <ShotSizeIcon size={shot.size} />
                       <span className="chip-row">{specChips(shot)}</span>
                     </span>
-                  </td>
-                  <td className="col-gear">
-                    <span className="chip-row">{gearChips(shot)}</span>
+                    {(shot.gear ?? []).length > 0 && <span className="chip-row gear-row">{gearChips(shot)}</span>}
                   </td>
                   <td className="col-pri" onClick={(e) => e.stopPropagation()}>
                     <button type="button" className={`pill ${shot.priority === 'essential' ? 'green' : 'grey'}`} onClick={() => update(shot, { priority: shot.priority === 'essential' ? 'optional' : 'essential' })} aria-label={`Priority ${shot.priority}; click to change`}>
@@ -300,14 +324,14 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                 </tr>
                 {editing === shot.id && (
                   <tr className="editor-row">
-                    <td colSpan={6}>{editor(shot, j)}</td>
+                    <td colSpan={5}>{editor(shot, j)}</td>
                   </tr>
                 )}
               </Fragment>
             ))}
             {!visible.length && (
               <tr>
-                <td colSpan={6} className="muted small">
+                <td colSpan={5} className="muted small">
                   No shots match this filter.
                 </td>
               </tr>
@@ -315,7 +339,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
           </tbody>
         </table>
         {addForm}
-        <p className="muted small capture-note">Click a row to edit it. “Captured” means you filmed it; it doesn’t mean the footage has been reviewed.</p>
+        <p className="muted small capture-note">Click a row to edit it and see its camera notes. “Captured” means you filmed it; it doesn’t mean the footage has been reviewed.</p>
       </section>
     </div>
   );

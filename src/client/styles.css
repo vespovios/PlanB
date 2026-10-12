@@ -4417,3 +4417,203 @@ button.pill {
   background: #e8f0fd;
   color: #2f4f8f;
 }
+.pk-select {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+}
+.pk-select select {
+  width: auto;
+  min-height: 34px;
+  padding: 4px 8px;
+}
+.film-slot {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ---- Review round: timeline toggle, roomier shot table, whole thumbnails, gear matches ---- */
+.sequence-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 2px;
+  margin-left: -2px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sequence-toggle:hover {
+  background: rgba(20, 30, 50, 0.05);
+}
+.sequence-toggle > span:last-child {
+  display: flex;
+  flex-direction: column;
+}
+.sequence-chevron {
+  display: inline-block;
+  font-size: 1.1rem;
+  transition: transform 0.15s;
+}
+.sequence-hidden .sequence-chevron {
+  transform: rotate(-90deg);
+}
+.sequence-hidden .sequence-head {
+  margin-bottom: 8px;
+}
+@media (min-width: 761px) and (min-height: 700px) {
+  .ep-page .planner.sequence-hidden .workspace .panel.left,
+  .ep-page .planner.sequence-hidden .workspace .panel.right {
+    max-height: max(420px, calc(100vh - 330px));
+  }
+}
+
+.shot-table .col-desc {
+  min-width: 260px;
+}
+.shot-table .col-setup {
+  width: 210px;
+}
+.shot-table .col-pri {
+  width: 100px;
+}
+.shot-table .col-ref {
+  width: 40px;
+}
+.shot-table .gear-row {
+  margin-top: 6px;
+}
+.shot-notes-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  color: #8b93a1;
+  font-size: 0.74rem;
+}
+.shot-table tr.editing .shot-notes-hint {
+  display: none;
+}
+@media (max-width: 1100px) and (min-width: 761px) {
+  .shot-table .col-setup {
+    width: 160px;
+  }
+  .shots-tab {
+    grid-template-columns: 190px 1fr;
+  }
+}
+
+/* Storyboards are drawings with labels near the edges: always show the whole frame. */
+.scene-head-img img,
+.board-img img {
+  object-fit: contain;
+  background: #fff;
+}
+
+.scene-pane-item.no-match,
+.scene-strip button.no-match {
+  opacity: 0.45;
+}
+.scene-pane-text .match-count {
+  display: block;
+  margin-top: 2px;
+  color: #2f4f8f;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.scene-strip .match-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: #e8f0fd;
+  color: #2f4f8f;
+  font-size: 0.72rem;
+}
+.scene-strip button.on .match-count {
+  background: #fff;
+}
+button.kit-usage {
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+.filter-chips .filter-select {
+  min-width: 0;
+  max-width: 240px;
+}
+/* Folded timeline: header and scene buttons share one slim row. */
+.sequence-hidden .sequence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.sequence-hidden .sequence-head {
+  flex: 1 1 auto;
+  margin: 0;
+}
+.sequence-hidden .sequence-foot {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sequence-hidden .sequence-foot > .muted,
+.sequence-hidden .sequence-foot > .spacer {
+  display: none;
+}
+@media (min-width: 761px) and (min-height: 700px) {
+  .ep-page .planner.sequence-hidden .workspace .panel.left,
+  .ep-page .planner.sequence-hidden .workspace .panel.right {
+    max-height: max(420px, calc(100vh - 270px));
+  }
+}
+.scene-location {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: #3b4250;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+.scene-location .icon {
+  flex: none;
+  margin-top: 2px;
+  color: #8b93a1;
+}
+/* Show the whole "why it belongs" text; it is the reason the scene exists. */
+.scene-purpose {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.scene-head-img {
+  align-self: flex-start;
+}
+.meta-chips {
+  align-items: center;
+}
+.meta-actions {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 4px;
+}
+.meta-actions .btn.small {
+  min-height: 30px;
+  padding: 2px 10px;
+  font-size: 0.82rem;
+}
+.meta-chips > span.meta-actions:not(.pill) {
+  max-width: none;
+  padding: 0;
+  background: none;
+  overflow: visible;
+}

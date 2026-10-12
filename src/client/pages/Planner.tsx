@@ -26,6 +26,9 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
   const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => localStorage.setItem('planb:view', view), [view]);
+  // The timeline can be folded away to give scene text and shots the full height.
+  const [seqHidden, setSeqHidden] = useState(() => localStorage.getItem('planb:sequenceHidden') === '1');
+  useEffect(() => localStorage.setItem('planb:sequenceHidden', seqHidden ? '1' : '0'), [seqHidden]);
 
   const scenes = episode.scenes;
   const starts = sceneStarts(episode);
@@ -74,7 +77,7 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
 
   return (
     <>
-      <main className={mobile ? 'planner mobile' : 'planner'}>
+      <main className={mobile ? 'planner mobile' : `planner ${seqHidden ? 'sequence-hidden' : ''}`}>
         {mobile ? (
           <section className="mobile-scenes">
             <div className="section-head">
@@ -120,22 +123,35 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
             </section>
             <section className="sequence">
               <div className="sequence-head">
-                <div>
-                  <h2>{view === 'timeline' ? 'Scene timeline' : 'Scene cards'}</h2>
-                  <p className="muted">Story order</p>
-                </div>
-                <Segmented
-                  ariaLabel="View"
-                  value={view}
-                  options={[
-                    { value: 'timeline', label: 'Timeline' },
-                    { value: 'cards', label: 'Cards' },
-                  ]}
-                  onChange={setView}
-                />
+                <button
+                  type="button"
+                  className="sequence-toggle"
+                  aria-expanded={!seqHidden}
+                  onClick={() => setSeqHidden((h) => !h)}
+                  title={seqHidden ? 'Show the timeline' : 'Hide the timeline to give the scene more room'}
+                >
+                  <span className="sequence-chevron" aria-hidden>
+                    ▾
+                  </span>
+                  <span>
+                    <h2>{view === 'timeline' ? 'Scene timeline' : 'Scene cards'}</h2>
+                    <span className="muted small">{seqHidden ? 'Hidden · click to show' : 'Story order · click to hide'}</span>
+                  </span>
+                </button>
+                {!seqHidden && (
+                  <Segmented
+                    ariaLabel="View"
+                    value={view}
+                    options={[
+                      { value: 'timeline', label: 'Timeline' },
+                      { value: 'cards', label: 'Cards' },
+                    ]}
+                    onChange={setView}
+                  />
+                )}
                 {runtime}
               </div>
-              {view === 'timeline' ? (
+              {seqHidden ? null : view === 'timeline' ? (
                 <Timeline
                   scenes={scenes}
                   selectedId={selectedId}

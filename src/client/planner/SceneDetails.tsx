@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { formatTime, sceneNumber, type Scene } from '../../shared/model';
 import { assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
@@ -79,6 +79,13 @@ export function SceneDetails({ scene, index, start, count, engine, episodeId, on
             onChange={(v) => set({ location: v })}
             onBlur={flush}
           />
+        </Disclosure>
+        <Disclosure label="Filming order" filled={!!scene.filmDay || !!scene.filmStop} hint="When this gets filmed, separate from story order: shooting day and stop">
+          <div className="film-slot">
+            <SlotSelect label="Filming day" prefix="Day" max={14} value={scene.filmDay ?? null} onChange={(v) => set({ filmDay: v }, 0)} />
+            <SlotSelect label="Stop" prefix="Stop" max={30} value={scene.filmStop ?? null} onChange={(v) => set({ filmStop: v }, 0)} />
+          </div>
+          <p className="muted small">The filming checklist and production pack can list scenes in this order. Story order stays as it is.</p>
         </Disclosure>
         <Disclosure label="Notes / edit intent" filled={!!scene.notes || !!scene.cutToNext} hint="General notes, e.g. leave a pause or match movement for a transition">
           <div className="field">
@@ -197,5 +204,23 @@ function StoryboardSection({ scene, engine, episodeId }: { scene: Scene; engine:
         />
       )}
     </>
+  );
+}
+
+function SlotSelect(props: { label: string; prefix: string; max: number; value: number | null; onChange: (v: number | null) => void }) {
+  const id = useId();
+  const options = Array.from({ length: Math.max(props.max, props.value ?? 0) }, (_, i) => i + 1);
+  return (
+    <div className="field">
+      <label htmlFor={id}>{props.label}</label>
+      <select id={id} value={props.value ?? ''} onChange={(e) => props.onChange(e.target.value ? Number(e.target.value) : null)}>
+        <option value="">Not set</option>
+        {options.map((n) => (
+          <option key={n} value={n}>
+            {props.prefix} {n}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

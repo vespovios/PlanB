@@ -5,6 +5,7 @@ import {
   AssetId,
   AttachmentId,
   CutTypeEnum,
+  FilmNumber,
   Duration,
   EpisodeDocSchema,
   GearId,
@@ -55,6 +56,8 @@ const SceneFields = z
     location: t(LIMITS.shortText),
     thumbnailAttachmentId: AttachmentId.nullable(),
     cutToNext: CutTypeEnum.nullable(),
+    filmDay: FilmNumber.nullable(),
+    filmStop: FilmNumber.nullable(),
   })
   .partial()
   .strict();
@@ -380,6 +383,8 @@ const FIELD_NAMES: Record<string, string> = {
   cameraNotes: 'camera notes',
   thumbnailAttachmentId: 'thumbnail',
   cutToNext: 'cut to next scene',
+  filmDay: 'filming day',
+  filmStop: 'filming stop',
   description: 'description',
 };
 const fieldList = (fields: object) =>

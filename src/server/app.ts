@@ -6,7 +6,7 @@ import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { checklistMarkdown, buildChecklist } from '../shared/checklist.js';
+import { checklistMarkdown, checklistOrder, buildChecklist } from '../shared/checklist.js';
 import { LIMITS } from '../shared/model.js';
 import { AssetStore } from './assets.js';
 import { Auth, LoginThrottle, type Principal } from './auth.js';
@@ -209,10 +209,10 @@ export async function buildApp(config: Config, services = createServices(config)
 
   app.get('/api/episodes/:id/checklist', { preHandler: requireAny }, async (req, reply) => {
     const ep = episodes.get(p(req), (req.params as IdParams).id);
-    const q = req.query as { format?: string; groupByLocation?: string };
-    const group = q.groupByLocation === 'true' || q.groupByLocation === '1';
-    if (q.format === 'markdown') return reply.type('text/markdown; charset=utf-8').send(checklistMarkdown(ep, group));
-    return { revision: ep.revision, groups: buildChecklist(ep, group) };
+    const q = req.query as { format?: string; groupByLocation?: string; order?: string };
+    const order = checklistOrder(q.order ?? q.groupByLocation);
+    if (q.format === 'markdown') return reply.type('text/markdown; charset=utf-8').send(checklistMarkdown(ep, order));
+    return { revision: ep.revision, order, groups: buildChecklist(ep, order) };
   });
 
   app.get('/api/episodes/:id/export.zip', { preHandler: requireAny }, async (req, reply) => {

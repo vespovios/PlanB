@@ -106,6 +106,8 @@ export type ImageAttachment = z.infer<typeof ImageAttachmentSchema>;
 /** Optional free-text scene fields. Only title and duration are required from the creator. */
 export const SCENE_TEXT_FIELDS = ['description', 'purpose', 'notes', 'voiceover', 'audio', 'location'] as const;
 
+export const FilmNumber = z.number().int().min(1).max(99);
+
 export const SceneSchema = z.object({
   id: SceneId,
   title: text(LIMITS.title).trim().min(1, 'A scene needs a title'),
@@ -120,6 +122,9 @@ export const SceneSchema = z.object({
   thumbnailAttachmentId: AttachmentId.nullable().default(null),
   /** Editing intention for the transition into the next scene (rough-cut guide). */
   cutToNext: CutTypeEnum.nullable().default(null),
+  /** When it gets filmed, independent of story order: shooting day (1, 2, …) and stop within that day. */
+  filmDay: FilmNumber.nullable().default(null),
+  filmStop: FilmNumber.nullable().default(null),
   shots: z.array(ShotSchema).max(LIMITS.maxShotsPerScene).default([]),
   attachments: z.array(AttachmentSchema).max(LIMITS.maxAttachmentsPerScene).default([]),
   storyboard: StoryboardSchema.nullable().default(null),

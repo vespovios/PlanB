@@ -17,7 +17,7 @@ export const GEAR_KIND_LABELS: Record<GearItem['kind'], string> = {
 };
 
 /** Kit list for the episode. Shots refer to these items; the agent only suggests gear from here. */
-export function KitList({ episode, engine }: { episode: Episode; engine: EpisodeSync }) {
+export function KitList({ episode, engine, onShowShots }: { episode: Episode; engine: EpisodeSync; onShowShots?: (gearId: string) => void }) {
   const gear = episode.gear ?? [];
   const [name, setName] = useState('');
   const [kind, setKind] = useState<GearItem['kind']>('camera');
@@ -90,7 +90,13 @@ export function KitList({ episode, engine }: { episode: Episode; engine: Episode
                   onChange={(v) => engine.queue({ op: 'updateGear', gearId: g.id, fields: { notes: v } }, 700)}
                   onBlur={() => void engine.flush()}
                 />
-                <span className="muted small kit-usage">{used ? `${used} shot${used === 1 ? '' : 's'}` : 'unused'}</span>
+                {used && onShowShots ? (
+                  <button type="button" className="link-btn kit-usage" onClick={() => onShowShots(g.id)} title={`Show the shots that use ${g.name}`}>
+                    {used} shot{used === 1 ? '' : 's'} →
+                  </button>
+                ) : (
+                  <span className="muted small kit-usage">{used ? `${used} shot${used === 1 ? '' : 's'}` : 'unused'}</span>
+                )}
                 <button
                   type="button"
                   className="icon-btn"

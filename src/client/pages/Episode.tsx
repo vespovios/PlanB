@@ -26,6 +26,7 @@ export function EpisodePage({ id, tab, user, onSignOut }: { id: string; tab: Epi
   const [toast, setToast] = useState<ToastState>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [sketchFor, setSketchFor] = useState<string | null>(null);
+  const [gearFilter, setGearFilter] = useState('');
   const closeToast = useCallback(() => setToast(null), []);
 
   useEffect(() => {
@@ -159,13 +160,31 @@ export function EpisodePage({ id, tab, user, onSignOut }: { id: string; tab: Epi
     navigate(href.episode(episode.id, 'plan'));
   };
 
+  // Kit tab → Shots tab filtered to one piece of gear, starting at the first scene that uses it.
+  const showGearShots = (gearId: string) => {
+    setGearFilter(gearId);
+    const first = episode.scenes.find((s) => s.shots.some((sh) => (sh.gear ?? []).includes(gearId)));
+    if (first) setSelectedId(first.id);
+    navigate(href.episode(episode.id, 'shots'));
+  };
+
   let content: React.ReactNode;
   switch (tab) {
     case 'plan':
       content = <PlanTab episode={episode} sync={sync} selectedId={selectedId} setSelectedId={setSelectedId} setToast={setToast} />;
       break;
     case 'shots':
-      content = <ShotsTab episode={episode} engine={engine} selectedId={selectedId} setSelectedId={setSelectedId} onEditSketch={setSketchFor} />;
+      content = (
+        <ShotsTab
+          episode={episode}
+          engine={engine}
+          selectedId={selectedId}
+          setSelectedId={setSelectedId}
+          onEditSketch={setSketchFor}
+          gearFilter={gearFilter}
+          setGearFilter={setGearFilter}
+        />
+      );
       break;
     case 'storyboard':
       content = <BoardTab episode={episode} onEdit={setSketchFor} />;
@@ -174,7 +193,7 @@ export function EpisodePage({ id, tab, user, onSignOut }: { id: string; tab: Epi
       content = (
         <section className="tab-page">
           <h2>Kit list</h2>
-          <KitList episode={episode} engine={engine} />
+          <KitList episode={episode} engine={engine} onShowShots={showGearShots} />
         </section>
       );
       break;

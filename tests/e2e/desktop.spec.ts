@@ -278,7 +278,7 @@ test('filming checklist and print view (acceptance 8)', async ({ page }) => {
   await expect(page.locator('.checklist-scene').first()).toContainText('Two riders pack their bags');
   await expect(page.locator('.checklist-scene').first()).toContainText('Essential');
   await expect(page.locator('.checklist-scene').first()).toContainText('Optional');
-  await page.getByText('Group by location').click();
+  await page.getByRole('radio', { name: 'By location' }).click();
   await expect(page.locator('.group-title')).toHaveText(['📍 Home garage', '📍 On the road', '📍 Fuel station']);
   await page.emulateMedia({ media: 'print' });
   await expect(page.locator('.topbar')).toBeHidden();
@@ -414,4 +414,47 @@ test('episode overview, shot list tab and storyboard board', async ({ page }) =>
   await expect(page.locator('.board-frame')).toHaveCount(4);
   await page.getByRole('button', { name: /Draw storyboard for Fuel and coffee stop/ }).click();
   await expect(page.locator('.sb-editor')).toBeVisible();
+});
+
+test('kit counts open the matching shots; timeline folds away; filming order in the checklist', async ({ page }) => {
+  await login(page);
+  const id = await createEpisode(page, 'Review round');
+  const tabs = page.locator('.ep-tabs');
+
+  // Kit item used by one shot → its count opens the Shots tab filtered to that gear.
+  await tabs.getByRole('link', { name: /^Kit/ }).click();
+  await page.getByLabel('New gear name').fill('Chest mount');
+  await page.getByRole('button', { name: '+ Gear' }).click();
+  await tabs.getByRole('link', { name: /^Plan/ }).click();
+  await page.locator('.timeline-track .block').nth(2).click();
+  await page.locator('.shot-gear').first().getByLabel('Add gear to shot').selectOption({ label: 'Chest mount (Camera)' });
+  await waitSaved(page);
+  await tabs.getByRole('link', { name: /^Kit/ }).click();
+  await page.getByRole('button', { name: '1 shot →' }).click();
+  await expect(page).toHaveURL(new RegExp(`#/e/${id}/shots$`));
+  await expect(page.getByLabel('Filter by gear')).toHaveValue(/^ge_/);
+  await expect(page.locator('.scene-head h2')).toHaveText('The road to the mountains');
+  await expect(page.locator('.shot-table tbody tr:not(.editor-row)')).toHaveCount(1);
+  await expect(page.locator('.scene-pane-item.no-match')).toHaveCount(3);
+
+  // The timeline folds away and stays folded after a reload.
+  await tabs.getByRole('link', { name: /^Plan/ }).click();
+  await page.locator('.sequence-toggle').click();
+  await expect(page.locator('.timeline-track')).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator('.sequence-toggle')).toHaveAttribute('aria-expanded', 'false');
+  await page.locator('.sequence-toggle').click();
+  await expect(page.locator('.timeline-track')).toBeVisible();
+
+  // Filming order: the last story scene is filmed first.
+  await page.locator('.timeline-track .block').nth(3).click();
+  await page.getByRole('button', { name: '+ Filming order' }).click();
+  await page.getByLabel('Filming day').selectOption('1');
+  await page.getByLabel('Stop', { exact: true }).selectOption('1');
+  await waitSaved(page);
+  await page.goto(`/#/e/${id}/checklist`);
+  await page.getByRole('radio', { name: 'Filming order' }).click();
+  await expect(page.locator('.group-title')).toHaveText(['🎬 Day 1', '🎬 No filming day set']);
+  await expect(page.locator('.checklist-scene').first()).toContainText('Fuel and coffee stop');
+  await expect(page.locator('.checklist-scene').first()).toContainText('Day 1 · stop 1');
 });

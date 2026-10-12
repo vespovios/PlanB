@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { buildChecklist } from '../../shared/checklist';
+import { buildChecklist, filmSlot, type ChecklistOrder } from '../../shared/checklist';
 import { capturedCount, formatTime, totalSeconds } from '../../shared/model';
 import { assetUrl, type User } from '../api';
 import { Shell } from '../components/Shell';
 import { useEpisodeSync } from '../sync';
 import { TopBar } from '../components/TopBar';
-import { Logo } from '../components/ui';
+import { Logo, Segmented } from '../components/ui';
 import { href } from '../router';
 import { SaveStatus } from './Planner';
 
@@ -13,14 +13,16 @@ import { SaveStatus } from './Planner';
 export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User; onSignOut: () => void }) {
   const sync = useEpisodeSync(id);
   const { episode, engine } = sync;
-  const [byLocation, setByLocation] = useState(false);
+  const [order, setOrder] = useState<ChecklistOrder>('story');
   const [sketches, setSketches] = useState(true);
   const [details, setDetails] = useState(true);
 
   if (sync.loadError) return <p className="error center">{sync.loadError}</p>;
   if (!episode) return <div className="boot">Loading checklist…</div>;
-  const groups = buildChecklist(episode, byLocation);
+  const groups = buildChecklist(episode, order);
   const hasLocations = episode.scenes.some((s) => s.location.trim());
+  const hasSlots = episode.scenes.some((s) => s.filmDay || s.filmStop);
+  const byLocation = order === 'location';
   const allShots = episode.scenes.flatMap((s) => s.shots);
 
   return (
@@ -47,12 +49,20 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
             {episode.scenes.length} scenes · planned {formatTime(totalSeconds(episode))} · {allShots.filter((s) => s.captured).length}/{allShots.length} shots reported captured ·
             revision {episode.revision} · {new Date(episode.updatedAt).toLocaleString()}
           </p>
-          <p className="muted small print-note">Captured = reported as filmed, not reviewed. Scene numbers follow story order.</p>
+          <p className="muted small print-note">
+            Captured = reported as filmed, not reviewed. Scene numbers follow story order{order === 'filming' ? '; listed in filming order (day, then stop)' : ''}.
+          </p>
           <div className="checklist-options no-print">
-            <label className="check">
-              <input type="checkbox" checked={byLocation} onChange={(e) => setByLocation(e.target.checked)} disabled={!hasLocations} />
-              <span>Group by location{hasLocations ? '' : ' (no locations set)'}</span>
-            </label>
+            <Segmented<ChecklistOrder>
+              ariaLabel="Checklist order"
+              value={order}
+              options={[
+                { value: 'story', label: 'Story order' },
+                { value: 'filming', label: 'Filming order' },
+                { value: 'location', label: 'By location' },
+              ]}
+              onChange={setOrder}
+            />
             <label className="check">
               <input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} />
               <span>Scene notes</span>
@@ -62,10 +72,15 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
               <span>Sketches</span>
             </label>
           </div>
+          {order === 'filming' && !hasSlots && (
+            <p className="muted small no-print">No filming days set yet. Give each scene a filming day and stop in the Plan tab (Filming order), or ask your agent to.</p>
+          )}
+          {order === 'location' && !hasLocations && <p className="muted small no-print">No locations set yet.</p>}
         </header>
         {groups.map((g, gi) => (
           <section key={gi} className="checklist-group">
-            {byLocation && <h2 className="group-title">📍 {g.location ?? 'No location given'}</h2>}
+            {byLocation && <h2 className="group-title">📍 {g.label ?? 'No location given'}</h2>}
+            {order === 'filming' && <h2 className="group-title">🎬 {g.label ?? 'No filming day set'}</h2>}
             {g.scenes.map(({ number, start, scene }) => {
               const { captured, total } = capturedCount(scene);
               return (
@@ -76,7 +91,8 @@ export function ChecklistPage({ id, user, onSignOut }: { id: string; user: User;
                     </h3>
                     <span className="muted small">
                       {formatTime(start)}–{formatTime(start + scene.durationSeconds)} · {formatTime(scene.durationSeconds)} ·{' '}
-                      {scene.status === 'ready' ? 'Ready to film' : 'Draft'} · {captured}/{total} captured · <code>{scene.id}</code>
+                      {scene.status === 'ready' ? 'Ready to film' : 'Draft'} · {captured}/{total} captured
+                      {filmSlot(scene) && <> · <b>{filmSlot(scene)}</b></>} · <code>{scene.id}</code>
                     </span>
                   </header>
                   {details && (

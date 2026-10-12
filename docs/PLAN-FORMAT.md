@@ -34,6 +34,7 @@ All paths inside the bundle are relative to the file that contains them. Externa
       "description": "…", "purpose": "…", "notes": "…", "voiceover": "…", "audio": "…", "location": "…",
       "thumbnailAttachmentId": "at_…|null",
       "cutToNext": "jcut|match|…|null",
+      "filmDay": "1…99|null", "filmStop": "1…99|null",
       "capturedShots": 1, "totalShots": 3,
       "shots": [{ "id": "sh_…", "order": 0, "description": "…", "framing": "…", "size": "ws|null", "angle": "low|null", "movement": "track|null", "gear": ["ge_…"], "cameraNotes": "…",
                   "priority": "essential|optional", "captured": false }],

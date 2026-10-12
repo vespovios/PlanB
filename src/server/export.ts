@@ -2,6 +2,7 @@
 // built from a single saved revision. No credentials or app URLs are embedded.
 import fs from 'node:fs';
 import { strToU8, zipSync, type Zippable } from 'fflate';
+import { filmSlot } from '../shared/checklist.js';
 import { PLAN_SCHEMA_VERSION, formatTime, sceneNumber, sceneStarts, totalSeconds, type Episode } from '../shared/model.js';
 import { STORYBOARD_SCHEMA_VERSION, describeObjects } from '../shared/storyboard.js';
 import { CUT_TYPES, SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term } from '../shared/vocab.js';
@@ -105,6 +106,8 @@ export function buildExport(episode: Episode, assets: AssetStore, appVersion: st
       location: scene.location,
       thumbnailAttachmentId: scene.thumbnailAttachmentId,
       cutToNext: scene.cutToNext ?? null,
+      filmDay: scene.filmDay ?? null,
+      filmStop: scene.filmStop ?? null,
       capturedShots: captured,
       totalShots: total,
       shots: scene.shots.map((s, j) => ({ ...s, size: s.size ?? null, angle: s.angle ?? null, movement: s.movement ?? null, gear: s.gear ?? [], order: j })),
@@ -160,6 +163,8 @@ type Plan = {
     capturedShots: number;
     totalShots: number;
     cutToNext: string | null;
+    filmDay: number | null;
+    filmStop: number | null;
     shots: { description: string; framing: string; size: string | null; angle: string | null; movement: string | null; gear: string[]; cameraNotes: string; priority: string; captured: boolean; id: string }[];
     attachments: ({ kind: 'link'; label: string; url: string; caption: string } | { kind: 'image'; label: string; file: string | null; caption: string })[];
     storyboard: { preview: string | null; document: string; description: string; summary: string } | null;
@@ -202,6 +207,7 @@ export function planMarkdown(plan: Plan): string {
     field('Purpose', s.purpose);
     field('What happens', s.description);
     field('Location / route', s.location);
+    field('Filming order', filmSlot(s));
     field('Voice-over', s.voiceover);
     field('Audio / music', s.audio);
     field('Notes', s.notes);
