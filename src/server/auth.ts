@@ -100,6 +100,25 @@ export class Auth {
     return normalised;
   }
 
+  /** Lets `memberId` see and edit all of `ownerId`'s episodes. */
+  share(ownerId: string, memberId: string) {
+    if (ownerId === memberId) throw new HttpError(400, 'An account already has its own episodes');
+    this.db.prepare('INSERT OR IGNORE INTO account_shares (owner_id, member_id, created_at) VALUES (?, ?, ?)').run(ownerId, memberId, now());
+  }
+
+  unshare(ownerId: string, memberId: string): boolean {
+    return this.db.prepare('DELETE FROM account_shares WHERE owner_id = ? AND member_id = ?').run(ownerId, memberId).changes > 0;
+  }
+
+  listShares(): { owner: string; member: string; created_at: string }[] {
+    return this.db
+      .prepare(
+        `SELECT o.name AS owner, m.name AS member, s.created_at FROM account_shares s
+         JOIN users o ON o.id = s.owner_id JOIN users m ON m.id = s.member_id ORDER BY s.created_at`,
+      )
+      .all() as never;
+  }
+
   listUsers(): (User & { created_at: string })[] {
     return this.db.prepare('SELECT id, email, name, created_at FROM users ORDER BY created_at').all() as never;
   }

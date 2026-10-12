@@ -61,6 +61,7 @@ export function EpisodesPage({ user, onSignOut }: { user: User; onSignOut: () =>
                       <i />
                       {e.status === 'ready' ? 'Ready for filming' : e.sceneCount ? 'Draft' : 'Idea'}
                     </span>
+                    {e.ownerName && <span className="pill blue">Shared by {e.ownerName}</span>}
                     {e.sceneCount} scene{e.sceneCount === 1 ? '' : 's'} · updated {new Date(e.updatedAt).toLocaleDateString()}
                   </span>
                   <span className="episode-stats">
@@ -80,9 +81,11 @@ export function EpisodesPage({ user, onSignOut }: { user: User; onSignOut: () =>
                   </span>
                 </span>
               </a>
-              <button className="icon-btn episode-delete" aria-label={`Delete ${e.title}`} onClick={() => setDeleting(e)}>
-                🗑
-              </button>
+              {!e.ownerName && (
+                <button className="icon-btn episode-delete" aria-label={`Delete ${e.title}`} onClick={() => setDeleting(e)}>
+                  🗑
+                </button>
+              )}
             </li>
           ))}
         </ul>

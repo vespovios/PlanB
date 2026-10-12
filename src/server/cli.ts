@@ -34,6 +34,9 @@ function usage(): never {
   user:password --email you@example.com [--password-stdin]
   user:email --email old@example.com --new-email new@example.com   change the sign-in e-mail
   user:name --email you@example.com --name "Your Name"             change the name shown in PlanB
+  share:add --owner you@example.com --with them@example.com          they can see and edit all your episodes
+  share:remove --owner you@example.com --with them@example.com
+  share:list
   token:create --email you@example.com --label "Claude"      prints a new agent token once
   backup --out backups/planb-YYYYMMDD.tar.gz                  online backup of database + assets
   restore --from backups/file.tar.gz [--yes]                  stop the app first
@@ -111,6 +114,25 @@ async function main() {
       if (!user) throw new Error('No such user');
       auth.setName(user.id, str('name') ?? usage());
       console.log(`Name changed to ${str('name')!.trim()}.`);
+      break;
+    }
+    case 'share:add':
+    case 'share:remove': {
+      const auth = new Auth(openDatabase(config.dataDir), config.sessionDays);
+      const owner = auth.findUserByEmail(str('owner') ?? usage());
+      const member = auth.findUserByEmail(str('with') ?? usage());
+      if (!owner || !member) throw new Error('No such user');
+      if (command === 'share:add') {
+        auth.share(owner.id, member.id);
+        console.log(`${member.name} can now see and edit all of ${owner.name}'s episodes.`);
+      } else {
+        console.log(auth.unshare(owner.id, member.id) ? `${member.name} no longer sees ${owner.name}'s episodes.` : 'Nothing was shared.');
+      }
+      break;
+    }
+    case 'share:list': {
+      const auth = new Auth(openDatabase(config.dataDir), config.sessionDays);
+      for (const s of auth.listShares()) console.log(`${s.owner} → ${s.member}  ${s.created_at}`);
       break;
     }
     case 'token:create': {

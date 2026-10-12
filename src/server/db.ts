@@ -67,6 +67,16 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX assets_episode ON assets(episode_id);
   `,
+  `
+  -- An owner lets another account see and edit all of the owner's episodes (deleting stays with the owner).
+  CREATE TABLE account_shares (
+    owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    member_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (owner_id, member_id)
+  );
+  CREATE INDEX account_shares_member ON account_shares(member_id);
+  `,
 ];
 
 export function openDatabase(dataDir: string): DB {

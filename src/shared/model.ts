@@ -149,6 +149,8 @@ export interface Episode extends EpisodeDoc {
 
 export interface EpisodeSummary {
   id: string;
+  /** Null for the account's own episodes; the owner's name for episodes shared with it. */
+  ownerName: string | null;
   title: string;
   status: 'draft' | 'ready';
   revision: number;

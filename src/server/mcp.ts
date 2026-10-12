@@ -80,7 +80,7 @@ export function createMcpServer(services: Services, principal: Principal, appVer
 
   server.registerTool(
     'list_episodes',
-    { title: 'List episodes', description: "List the account's episodes with revision, scene count and planned runtime.", inputSchema: {} },
+    { title: 'List episodes', description: "List the episodes this account can work on (its own and any shared with it; ownerName is set for shared ones) with revision, scene count and planned runtime.", inputSchema: {} },
     async () => run(() => episodes.list(principal)),
   );
 
@@ -204,7 +204,7 @@ Kit list: addGear{id?, item:{name,kind,notes?}} (optional id like "ge_tripod01" 
       inputSchema: { assetId: z.string(), maxWidth: z.number().int().min(64).max(2048).optional() },
     },
     async ({ assetId, maxWidth }) => {
-      const row = assets.getOwned(assetId, principal.user.id);
+      const row = episodes.asset(principal, assetId);
       if (!row) return failure(new HttpError(404, 'Image not found'));
       const sharp = (await import('sharp')).default;
       const data = await sharp(assets.filePath(row))

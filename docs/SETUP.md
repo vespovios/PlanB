@@ -68,7 +68,7 @@ No provider or domain is chosen yet. These steps work on any Linux VPS with Dock
    ```
 6. Open `https://planb.example.com` and sign in.
 
-Other admin commands: `user:list`, `user:password --email …` (resets a password and signs out that user's sessions), `user:email --email old --new-email new` (changes the sign-in e-mail; everything else stays), `user:name --email … --name "…"` (PlanB shows people by name, never by e-mail), `token:create --email … --label …`, `verify`, and `purge-deleted --days 30` (permanently removes episodes deleted in the browser).
+Other admin commands: `user:list`, `user:password --email …` (resets a password and signs out that user's sessions), `user:email --email old --new-email new` (changes the sign-in e-mail; everything else stays), `user:name --email … --name "…"` (PlanB shows people by name, never by e-mail), `share:add --owner … --with …` (the second account can see and edit all of the owner's episodes; only the owner can delete them), `share:remove`, `share:list`, `token:create --email … --label …`, `verify`, and `purge-deleted --days 30` (permanently removes episodes deleted in the browser).
 
 ### Security notes
 

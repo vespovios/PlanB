@@ -49,12 +49,6 @@ export class AssetStore {
     return this.db.prepare('SELECT * FROM assets WHERE id = ?').get(id) as AssetRow | undefined;
   }
 
-  /** Only returns the asset when the requesting account owns it. */
-  getOwned(id: string, ownerId: string): AssetRow | undefined {
-    const row = this.get(id);
-    return row && row.owner_id === ownerId ? row : undefined;
-  }
-
   forEpisode(episodeId: string): AssetRow[] {
     return this.db.prepare('SELECT * FROM assets WHERE episode_id = ?').all(episodeId) as AssetRow[];
   }

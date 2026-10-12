@@ -52,13 +52,29 @@ export class Episodes {
     this.events.setMaxListeners(0);
   }
 
+  /** True when the user owns the episodes of `ownerId`, or that owner has shared them with the user. */
+  private canAccess(userId: string, ownerId: string): boolean {
+    return (
+      userId === ownerId ||
+      !!this.db.prepare('SELECT 1 FROM account_shares WHERE owner_id = ? AND member_id = ?').get(ownerId, userId)
+    );
+  }
+
   private row(principal: Principal, id: string): EpisodeRow {
     const row = this.db
       .prepare('SELECT * FROM episodes WHERE id = ? AND deleted_at IS NULL')
       .get(id) as (EpisodeRow & { owner_id: string }) | undefined;
-    // Another account's episode is indistinguishable from a missing one.
-    if (!row || row.owner_id !== principal.user.id) throw notFound('Episode not found');
+    // An episode the account can't reach is indistinguishable from a missing one.
+    if (!row || !this.canAccess(principal.user.id, row.owner_id)) throw notFound('Episode not found');
     return row;
+  }
+
+  /** An image or storyboard preview, when it belongs to an episode the account can reach. */
+  asset(principal: Principal, assetId: string): AssetRow | undefined {
+    const a = this.assets.get(assetId);
+    if (!a) return undefined;
+    const ep = this.db.prepare('SELECT owner_id FROM episodes WHERE id = ?').get(a.episode_id) as { owner_id: string } | undefined;
+    return ep && this.canAccess(principal.user.id, ep.owner_id) ? a : undefined;
   }
 
   private toEpisode(row: EpisodeRow): Episode {
@@ -73,12 +89,19 @@ export class Episodes {
 
   list(principal: Principal): EpisodeSummary[] {
     const rows = this.db
-      .prepare('SELECT * FROM episodes WHERE owner_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC')
-      .all(principal.user.id) as EpisodeRow[];
+      .prepare(
+        `SELECT e.*, CASE WHEN e.owner_id = @me THEN NULL ELSE u.name END AS owner_name
+         FROM episodes e JOIN users u ON u.id = e.owner_id
+         WHERE e.deleted_at IS NULL
+           AND (e.owner_id = @me OR e.owner_id IN (SELECT owner_id FROM account_shares WHERE member_id = @me))
+         ORDER BY e.updated_at DESC`,
+      )
+      .all({ me: principal.user.id }) as (EpisodeRow & { owner_name: string | null })[];
     return rows.map((r) => {
       const doc = JSON.parse(r.doc) as EpisodeDoc;
       return {
         id: r.id,
+        ownerName: r.owner_name,
         title: doc.title,
         status: doc.status,
         revision: r.revision,
@@ -119,7 +142,8 @@ export class Episodes {
   }
 
   softDelete(principal: Principal, id: string) {
-    this.row(principal, id);
+    const row = this.row(principal, id) as EpisodeRow & { owner_id: string };
+    if (row.owner_id !== principal.user.id) throw new HttpError(403, 'Only the owner can delete this episode.');
     this.db.prepare('UPDATE episodes SET deleted_at = ? WHERE id = ?').run(now(), id);
   }
 
@@ -137,7 +161,8 @@ export class Episodes {
       nextRevision: row.revision + 1,
       resolveAsset: (assetId) => {
         const a = this.assets.get(assetId);
-        if (!a || a.owner_id !== principal.user.id || a.episode_id !== row.id || a.kind !== 'upload') return null;
+        // Any account that can edit the episode may use images uploaded to it.
+        if (!a || a.episode_id !== row.id || a.kind !== 'upload') return null;
         return { mime: a.mime, bytes: a.bytes, width: a.width, height: a.height };
       },
       findDeletedScene: (sceneId) => this.findSceneInHistory(row.id, sceneId),

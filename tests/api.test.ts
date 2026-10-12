@@ -275,6 +275,53 @@ describe('agent writes and revision protection (acceptance 5–7)', () => {
   });
 });
 
+describe('sharing an account\'s episodes', () => {
+  it('lets a member see, edit and use images of shared episodes, but not delete them', async () => {
+    const { app } = await startApp();
+    const { auth } = app.services;
+    const owner = await auth.createUser('owner@example.com', 'Owner', PASSWORD);
+    const member = await auth.createUser('member@example.com', 'Member', PASSWORD);
+    await auth.createUser('outsider@example.com', 'Outsider', PASSWORD);
+    const [co, cm, cx] = await Promise.all(['owner', 'member', 'outsider'].map((n) => login(app, `${n}@example.com`)));
+    const created = await app.inject({ method: 'POST', url: '/api/episodes', headers: asUser(co), payload: { title: 'Trip', withExample: true } });
+    const ep = created.json().episode as Episode;
+    const { payload, contentType } = multipartBody('a.png', await samplePng());
+    const upload = await app.inject({ method: 'POST', url: `/api/episodes/${ep.id}/assets`, headers: { ...asUser(co), 'content-type': contentType }, payload });
+    const assetId = upload.json().asset.id;
+
+    // Before sharing the member sees nothing.
+    expect((await app.inject({ method: 'GET', url: '/api/episodes', headers: asUser(cm) })).json().episodes).toEqual([]);
+    expect((await app.inject({ method: 'GET', url: `/api/episodes/${ep.id}`, headers: asUser(cm) })).statusCode).toBe(404);
+
+    auth.share(owner.id, member.id);
+    const list = (await app.inject({ method: 'GET', url: '/api/episodes', headers: asUser(cm) })).json().episodes;
+    expect(list.map((e: { id: string; ownerName: string | null }) => [e.id, e.ownerName])).toEqual([[ep.id, 'Owner']]);
+    expect((await app.inject({ method: 'GET', url: '/api/episodes', headers: asUser(co) })).json().episodes[0].ownerName).toBeNull();
+    expect((await app.inject({ method: 'GET', url: `/api/assets/${assetId}`, headers: asUser(cm) })).statusCode).toBe(200);
+
+    // The member's edit is saved and labelled with the member's name.
+    const edit = await app.inject({
+      method: 'POST',
+      url: `/api/episodes/${ep.id}/changes`,
+      headers: asUser(cm),
+      payload: { baseRevision: ep.revision, operations: [{ op: 'updateEpisode', fields: { brief: 'Edited by member' } }] },
+    });
+    expect(edit.statusCode).toBe(200);
+    const revs = (await app.inject({ method: 'GET', url: `/api/episodes/${ep.id}/revisions`, headers: asUser(co) })).json().revisions;
+    expect(revs[0].authorLabel).toBe('Member');
+
+    // Deleting stays with the owner; outsiders still see nothing.
+    expect((await app.inject({ method: 'DELETE', url: `/api/episodes/${ep.id}`, headers: asUser(cm) })).statusCode).toBe(403);
+    expect((await app.inject({ method: 'GET', url: `/api/episodes/${ep.id}`, headers: asUser(cx) })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: `/api/assets/${assetId}`, headers: asUser(cx) })).statusCode).toBe(404);
+
+    // Unsharing removes access again.
+    auth.unshare(owner.id, member.id);
+    expect((await app.inject({ method: 'GET', url: `/api/episodes/${ep.id}`, headers: asUser(cm) })).statusCode).toBe(404);
+    await app.close();
+  });
+});
+
 describe('account isolation (acceptance 9, 15)', () => {
   it("cannot read or modify another account's episode or assets", async () => {
     const ep = await createExample(asUser(ctx.cookieA));

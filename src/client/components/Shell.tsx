@@ -142,6 +142,7 @@ export function EpisodeSwitcher({ activeId, reloadKey }: { activeId?: string; re
                 <span>
                   <b>{e.title}</b>
                   <span>
+                    {e.ownerName ? `${e.ownerName}'s · ` : ''}
                     {e.sceneCount} scene{e.sceneCount === 1 ? '' : 's'} · {formatTime(e.totalSeconds)} · {e.status === 'ready' ? 'Ready' : 'Draft'}
                   </span>
                 </span>

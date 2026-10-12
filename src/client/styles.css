@@ -4413,3 +4413,7 @@ button.pill {
 .is-mobile .btn.add-scene-mobile {
   box-shadow: 0 6px 18px rgba(22, 25, 31, 0.3);
 }
+.pill.blue {
+  background: #e8f0fd;
+  color: #2f4f8f;
+}

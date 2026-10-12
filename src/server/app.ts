@@ -261,7 +261,7 @@ export async function buildApp(config: Config, services = createServices(config)
   });
 
   app.get('/api/assets/:id', { preHandler: requireAny }, async (req, reply) => {
-    const row = assets.getOwned((req.params as IdParams).id, p(req).user.id);
+    const row = episodes.asset(p(req), (req.params as IdParams).id);
     if (!row) throw notFound('Image not found');
     const w = Number((req.query as { w?: string }).w);
     reply.header('Cache-Control', 'private, max-age=31536000, immutable');
