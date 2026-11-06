@@ -265,7 +265,8 @@ export class EpisodeSync implements SaveParticipant {
       if (this.events?.readyState !== EventSource.CLOSED) return;
       this.events.close();
       this.events = null;
-      if (!this.stopped) setTimeout(() => !this.stopped && !this.events && this.connectEvents(), 3000);
+      // Not while the session is gone: reconnecting would only be refused (resume() reconnects).
+      if (!this.stopped && !saves.isSuspended) setTimeout(() => !this.stopped && !saves.isSuspended && !this.events && this.connectEvents(), 3000);
     };
     this.events.onopen = () => {
       if (this.server) void this.refresh();
@@ -291,7 +292,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Fetches the latest saved revision and replays local edits on top of it. */
   async refresh() {
-    if (this.discarded) return;
+    if (this.discarded || saves.isSuspended) return;
     return this.exclusive(async () => {
       try {
         const { episode } = await api.episode(this.id);
@@ -426,7 +427,7 @@ export class EpisodeSync implements SaveParticipant {
         if (err.status === 401) {
           this.failure = 'auth';
           this.state = 'error';
-          this.error = 'You were signed out. Your edits are kept here; sign in again in another tab, then press Retry.';
+          this.error = 'You were signed out. Your edits are kept here and are saved once you sign in again.';
         } else if (err.status >= 500) {
           // A server error is not retried automatically; the edits stay here until Retry.
           this.failure = 'server';
@@ -771,9 +772,27 @@ export class EpisodeSync implements SaveParticipant {
     return this.sending || this.active.size > 0;
   }
 
-  /** Writes were thawed: send what was held. */
+  /** The session is gone: close live updates; nothing is refreshed until resume(). */
+  suspend() {
+    if (this.discarded) return;
+    this.events?.close();
+    this.events = null;
+  }
+
+  /** The same account signed in again: saves refused as signed out go back in the queue to be sent. */
+  retryAfterReauth() {
+    if (this.discarded || this.failure !== 'auth') return;
+    this.failure = null;
+    this.retryDelay = 2000;
+    if (this.state === 'error') this.state = this.queued.length ? 'pending' : 'saved';
+    if (!this.stickyError) this.error = null;
+    this.emit();
+  }
+
+  /** Writes were thawed: send what was held, and reconnect live updates (which catch up on open). */
   resume() {
     if (this.discarded) return;
+    if (!this.stopped && !this.events) this.connectEvents();
     if (this.queued.length && this.state !== 'error') this.schedule(0);
   }
 

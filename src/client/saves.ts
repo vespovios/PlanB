@@ -56,6 +56,10 @@ export interface SaveParticipant {
   retryHeld(): void;
   /** A request or direct save is still running. */
   isBusy(): boolean;
+  /** The session is gone: stop live updates and refreshes (writes are already frozen). */
+  suspend(): void;
+  /** The same account signed in again: saves refused as signed out may be sent again. */
+  retryAfterReauth(): void;
 }
 
 const rank: Record<SaveOutcome, number> = { confirmed: 0, rejected: 1, uncertain: 2, blocked: 3 };
@@ -71,7 +75,8 @@ export const DEFAULT_SETTLE_MS = 10_000;
 export class SaveCoordinator {
   private participants = new Set<SaveParticipant>();
   private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; discard?: () => boolean | void }>();
-  private frozen = false;
+  /** Why writes are frozen (e.g. 'signout', 'auth'); writes resume only when no reason is left. */
+  private frozenBy = new Set<string>();
 
   /** Engines register while mounted and stay registered after unmount until their work is resolved. */
   register(p: SaveParticipant) {
@@ -97,21 +102,41 @@ export class SaveCoordinator {
   }
 
   get isFrozen() {
-    return this.frozen;
+    return this.frozenBy.size > 0;
   }
 
   /**
    * Stops new writes from being sent: edits are still accepted and kept locally, direct saves are
    * refused, and requests already sent are left to finish. Nothing is discarded.
    */
-  freeze() {
-    this.frozen = true;
+  freeze(reason = 'default') {
+    this.frozenBy.add(reason);
   }
 
-  thaw() {
-    if (!this.frozen) return;
-    this.frozen = false;
+  /** Removes one reason; writes resume only once no other reason (e.g. a lost session) remains. */
+  thaw(reason = 'default') {
+    if (!this.frozenBy.delete(reason) || this.frozenBy.size) return;
     this.participants.forEach((p) => p.resume());
+  }
+
+  /** The server session is gone: nothing is sent or refreshed until the same account signs in again. */
+  get isSuspended() {
+    return this.frozenBy.has('auth');
+  }
+
+  /** Session lost (expired, revoked, or the browser switched account): keep all work, pause everything. */
+  suspendForAuth() {
+    this.freeze('auth');
+    this.participants.forEach((p) => p.suspend());
+  }
+
+  /**
+   * The same account signed in again (verified by the caller): saves held because of the lost
+   * session are retried, and everything resumes and catches up with newer revisions.
+   */
+  reauthenticated() {
+    this.participants.forEach((p) => p.retryAfterReauth());
+    this.thaw('auth');
   }
 
   /** The current state of all outstanding work, without sending anything. */

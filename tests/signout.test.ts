@@ -15,6 +15,8 @@ function participant(issues: SaveIssue[] = []) {
     discard: vi.fn(() => void (p.list = [])),
     retryHeld: vi.fn(),
     isBusy: () => false,
+    suspend: () => undefined,
+    retryAfterReauth: () => undefined,
   };
   return p satisfies SaveParticipant;
 }

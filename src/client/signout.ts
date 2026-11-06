@@ -72,14 +72,14 @@ export class SignOutFlow {
   /** Blocked: ask to sign out without saving. Writes are frozen so the list shown is the list discarded. */
   askDiscard = () => {
     if (this.phase.step !== 'blocked') return;
-    this.c.freeze();
+    this.c.freeze('signout');
     this.set({ step: 'confirm', report: this.c.report() });
   };
 
   /** Confirm step: go back to the list without discarding. */
   back = () => {
     if (this.phase.step !== 'confirm') return;
-    this.c.thaw();
+    this.c.thaw('signout');
     const report = this.c.report();
     if (report.outcome === 'confirmed') this.end();
     else this.set({ step: 'blocked', report });
@@ -97,7 +97,7 @@ export class SignOutFlow {
   /** Unconfirmed: send the sign-out again (it is idempotent). Nothing is saved meanwhile. */
   tryAgain = () => {
     if (this.phase.step !== 'unconfirmed') return Promise.resolve();
-    this.c.freeze();
+    this.c.freeze('signout');
     return this.logout(this.run, this.phase.discard);
   };
 
@@ -108,7 +108,7 @@ export class SignOutFlow {
 
   private end() {
     this.run++;
-    this.c.thaw();
+    this.c.thaw('signout');
     this.set({ step: 'idle' });
   }
 
@@ -117,10 +117,10 @@ export class SignOutFlow {
     await this.c.settle(this.deps.settleMs);
     if (run !== this.run) return;
     // Freeze, then look again synchronously: nothing can be added between this report and sign-out.
-    this.c.freeze();
+    this.c.freeze('signout');
     const report = this.c.report();
     if (report.outcome === 'confirmed') return this.logout(run, false);
-    this.c.thaw();
+    this.c.thaw('signout');
     // Shown as it is now that writes resume (nothing is "paused" any more).
     this.set({ step: 'blocked', report: this.c.report() });
   }

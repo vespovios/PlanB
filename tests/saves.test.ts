@@ -75,6 +75,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   saves.thaw();
+  saves.thaw('signout');
+  saves.thaw('auth');
   // Discard rather than stop: a stopped engine with unsaved work keeps retrying (by design).
   for (const e of engines) e.discard();
   engines = [];
@@ -456,6 +458,8 @@ describe('errors that are not answers from the server', () => {
       discard: () => undefined,
       retryHeld: () => undefined,
       isBusy: () => false,
+    suspend: () => undefined,
+    retryAfterReauth: () => undefined,
       issues: (): never => {
         throw new Error('boom');
       },
@@ -692,5 +696,62 @@ describe('a discarded engine is terminal', () => {
     expect(sent).toHaveLength(0);
     expect(saves.isRegistered(e)).toBe(false);
     await expect(e.track('Upload', async () => 'x')).rejects.toMatchObject({ status: 410 });
+  });
+});
+
+describe('session lost and regained', () => {
+  it('pauses everything while the session is gone; a sign-out flow ending does not resume it', async () => {
+    const e = await started();
+    let calls = 0;
+    server.changes = async () => {
+      calls++;
+      throw new ApiError(401, 'Please sign in.');
+    };
+    e.queue(title('typed before expiry'));
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('error'));
+    saves.suspendForAuth();
+    saves.freeze('signout');
+    e.queue({ op: 'updateEpisode', fields: { brief: 'typed while signed out' } });
+    saves.thaw('signout');
+    await saves.settle(200);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(calls).toBe(1);
+    expect(saves.isFrozen).toBe(true);
+    // Both edits touch the episode fields, so they are one queued operation.
+    expect(kinds()).toEqual(['blocked:auth:1']);
+
+    // The same account signed in again: everything held is sent, once.
+    server.changes = apply;
+    saves.reauthenticated();
+    await vi.waitFor(() => expect([current.title, current.brief]).toEqual(['typed before expiry', 'typed while signed out']));
+    expect(saves.report()).toEqual({ outcome: 'confirmed', issues: [] });
+  });
+
+  it('does not refresh while the session is gone', async () => {
+    const e = await started();
+    let reads = 0;
+    server.episode = async () => {
+      reads++;
+      return { episode: current };
+    };
+    saves.suspendForAuth();
+    await e.refresh();
+    expect(reads).toBe(0);
+  });
+
+  it('after signing in again, edits rebase onto newer revisions and same-field changes become conflicts', async () => {
+    const e = await started();
+    server.changes = async () => {
+      throw new ApiError(401, 'Please sign in.');
+    };
+    e.queue(title('mine'));
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('error'));
+    saves.suspendForAuth();
+    // Meanwhile the agent changed the same field.
+    current = { ...current, title: 'agent', revision: current.revision + 1 };
+    server.changes = apply;
+    saves.reauthenticated();
+    await vi.waitFor(() => expect(kinds()).toEqual(['blocked:conflict:1']));
+    expect(current.title).toBe('agent');
   });
 });
