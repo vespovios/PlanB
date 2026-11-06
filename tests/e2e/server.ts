@@ -14,6 +14,8 @@ const config = loadConfig({
   staticDir: path.resolve('dist/client'),
   secureCookies: false,
   publicUrl: `http://127.0.0.1:${port}`,
+  // Every browser test signs in from 127.0.0.1; the sign-out tests alone exceed the production limit.
+  loginRateLimit: { max: 200, windowMs: 15 * 60 * 1000 },
 });
 const app = await buildApp(config);
 await app.services.auth.createUser('creator@example.com', 'Creator', 'creator-password-1');
