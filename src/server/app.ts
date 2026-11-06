@@ -22,6 +22,12 @@ export { APP_VERSION } from './version.js';
 import { APP_VERSION } from './version.js';
 const SESSION_COOKIE = 'planb_session';
 const CSRF_HEADER = 'x-planb-csrf';
+/**
+ * The account the browser app believes it is signed in as. The session cookie is shared by all
+ * tabs, so another tab can switch it to a different account; requests made for the old account
+ * are then refused instead of acting on the new one.
+ */
+const USER_HEADER = 'x-planb-user';
 
 export interface Services {
   db: DB;
@@ -94,6 +100,10 @@ export async function buildApp(config: Config, services = createServices(config)
     }
     const user = auth.sessionUser(req.cookies[SESSION_COOKIE]);
     if (!user) throw new HttpError(401, 'Please sign in.');
+    const expected = req.headers[USER_HEADER];
+    if (typeof expected === 'string' && expected && expected !== user.id) {
+      throw new HttpError(401, 'This browser is now signed in to a different account.', { code: 'session_user_changed' });
+    }
     // Cookie-authenticated writes must carry a custom header, which cross-site forms cannot send.
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers[CSRF_HEADER] !== '1') {
       throw new HttpError(403, 'Missing request header.');

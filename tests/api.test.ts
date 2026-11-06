@@ -45,6 +45,26 @@ describe('authentication', () => {
     expect(noHeader.statusCode).toBe(403);
   });
 
+  it('refuses a cookie request made for a different account than the session belongs to', async () => {
+    const me = await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: ctx.cookieA } });
+    const aliceId = me.json().user.id as string;
+    const bobId = (await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: ctx.cookieB } })).json().user.id as string;
+    // Matching account (or no header, as agents and older clients send): allowed.
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: { cookie: ctx.cookieA, 'x-planb-user': aliceId } })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: { cookie: ctx.cookieA } })).statusCode).toBe(200);
+    // Alice's app sending with Bob's cookie (another tab switched accounts): refused, nothing written.
+    const write = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/episodes',
+      headers: { ...asUser(ctx.cookieB), 'x-planb-user': aliceId },
+      payload: { title: 'Must not be created for Bob' },
+    });
+    expect(write.statusCode).toBe(401);
+    expect(write.json().code).toBe('session_user_changed');
+    const bobs = await ctx.app.inject({ method: 'GET', url: '/api/episodes', headers: { cookie: ctx.cookieB, 'x-planb-user': bobId } });
+    expect(bobs.json().episodes.map((e: { title: string }) => e.title)).not.toContain('Must not be created for Bob');
+  });
+
   it('agent tokens cannot manage tokens and revoked tokens stop working', async () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/tokens', headers: asAgent(ctx.tokenA) })).statusCode).toBe(403);
     const created = await ctx.app.inject({ method: 'POST', url: '/api/tokens', headers: asUser(ctx.cookieA), payload: { label: 'temp' } });
