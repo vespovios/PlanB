@@ -150,6 +150,18 @@ export class HistoryNav {
   private listeners = new Set<() => void>();
   /** A Back/Forward the user approved, on its way to this entry. */
   private approving: { index: number; hash: string } | null = null;
+  /**
+   * One history.go() of ours is under way to put the address back. Only one at a time: history.go
+   * is relative to wherever the browser is when it runs, so each correction is computed from the
+   * entry actually reached.
+   */
+  private correcting = false;
+
+  private restore(idx: number) {
+    if (this.correcting || idx === this.index) return;
+    this.correcting = true;
+    history.go(this.index - idx);
+  }
 
   constructor(
     private deps: {
@@ -221,19 +233,22 @@ export class HistoryNav {
       this.commit(target.hash);
       return;
     }
-    if (idx === this.index) return; // back on the entry that is shown (e.g. an undo landing)
+    const correction = this.correcting;
+    this.correcting = false;
+    if (idx === this.index) return; // back on the entry that is shown (e.g. a correction landing)
     const delta = idx - this.index;
     const from = parseRoute(this.committed);
     const to = parseRoute(hash);
+    const owned = this.deps.locked() || this.deps.guard.busy;
     // Clean, and nobody else owns the page: move at once, no flicker.
-    if (!this.deps.locked() && !this.deps.guard.busy && this.deps.guard.isClean(navScope(from, to))) {
+    if (!owned && !correction && this.deps.guard.isClean(navScope(from, to))) {
       this.index = idx;
       this.commit(hash);
       return;
     }
-    // Put the address back on the page still shown, then decide (or just stay, if locked/busy).
-    history.go(-delta);
-    if (this.deps.locked() || this.deps.guard.busy) return;
+    // Put the address back on the page still shown, then decide (or just stay, if owned).
+    this.restore(idx);
+    if (owned || correction) return;
     this.deps.guard.decide(
       navScope(from, to),
       () => {
