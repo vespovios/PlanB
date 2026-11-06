@@ -14,6 +14,20 @@ export function useSignOut(onSignedOut: () => void) {
   return useMemo(() => new SignOutFlow({ logout: () => api.logout(), onSignedOut: () => latest.current() }), []);
 }
 
+let inertHolders = 0;
+/** Makes the app behind a dialog rendered outside it inert while `active`; several dialogs may hold it. */
+export function useInertApp(active: boolean) {
+  useEffect(() => {
+    const root = document.getElementById('root');
+    if (!active || !root) return;
+    inertHolders++;
+    root.inert = true;
+    return () => {
+      if (--inertHolders === 0) root.inert = false;
+    };
+  }, [active]);
+}
+
 const RETRYABLE: SaveIssueKind[] = ['queued', 'held', 'offline', 'server', 'inflight', 'direct'];
 const noop = () => undefined;
 
@@ -34,14 +48,7 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
   const phase = useSyncExternalStore(flow.subscribe, flow.getSnapshot);
   const busy = phase.step !== 'idle';
   // Nothing behind the dialog can be edited or focused while signing out.
-  useEffect(() => {
-    const root = document.getElementById('root');
-    if (!root) return;
-    root.inert = busy;
-    return () => {
-      root.inert = false;
-    };
-  }, [busy]);
+  useInertApp(busy);
   if (!busy) return null;
 
   let dialog: React.ReactNode;

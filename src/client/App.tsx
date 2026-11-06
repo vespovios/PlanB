@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
-import { api, type User } from './api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { api, setSessionUser, type SessionLostDetail, type User } from './api';
+import { saves } from './saves';
+import { SessionRecovery } from './session';
+import { ReauthDialog } from './components/ReauthDialog';
 import { useRoute } from './router';
 import { LoginPage } from './pages/Login';
 import { EpisodesPage } from './pages/Episodes';
@@ -10,11 +13,29 @@ import { SettingsPage } from './pages/Settings';
 import { SignOutDialog, useSignOut } from './components/SignOutDialog';
 
 export function App() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
+  const [user, setUserState] = useState<User | null | undefined>(undefined);
   const [offline, setOffline] = useState(false);
   const route = useRoute();
+  const current = useRef(user);
+  current.current = user;
+  /** The account this page acts for; every request names it (see api.ts). */
+  const setUser = (u: User | null) => {
+    setSessionUser(u?.id ?? null);
+    setUserState(u);
+  };
   // Sign-out saves first and returns to the login page only once the server confirmed it.
   const signOutFlow = useSignOut(() => setUser(null));
+  // A lost session pauses the page instead of unmounting it; only the same account resumes it.
+  const recovery = useMemo(
+    () =>
+      new SessionRecovery({
+        onDiscarded: (notDeleted) => {
+          setUser(null);
+          signOutFlow.reportNotDeleted(notDeleted);
+        },
+      }),
+    [],
+  );
 
   useEffect(() => {
     api
@@ -24,19 +45,34 @@ export function App() {
         if (e.offline) setOffline(true);
         setUser(null);
       });
-    const onSignedOut = () => {
+    const onSessionLost = (e: Event) => {
+      const signedIn = current.current;
+      if (!signedIn) return;
+      const detail = (e as CustomEvent<SessionLostDetail>).detail;
+      // About a request made for another account than this page's: not this page's session.
+      if (detail?.userId && detail.userId !== signedIn.id) return;
+      // Pause first, then abandon any sign-out in progress (its thaw cannot resume a paused session).
+      recovery.lost(signedIn, detail?.code === 'session_user_changed');
       signOutFlow.reset();
-      setUser(null);
     };
-    window.addEventListener('planb:signed-out', onSignedOut);
-    return () => window.removeEventListener('planb:signed-out', onSignedOut);
+    window.addEventListener('planb:signed-out', onSessionLost);
+    return () => window.removeEventListener('planb:signed-out', onSessionLost);
   }, []);
 
   if (user === undefined) return <div className="boot">Loading PlanB…</div>;
   if (user === null)
     return (
       <>
-        <LoginPage onLogin={setUser} offline={offline} />
+        <LoginPage
+          onLogin={(u) => {
+            // Nothing from a previous sign-in may be sent under, or shown to, this one. (Normally
+            // nothing is left: sign-out and leaving a lost session both end with no work held.)
+            if (saves.report().outcome !== 'confirmed') console.warn('PlanB: discarding work left from a previous sign-in');
+            saves.discardAll();
+            setUser(u);
+          }}
+          offline={offline}
+        />
         {/* Signed out, but something to report about the discarded work (e.g. a local copy left behind). */}
         <SignOutDialog flow={signOutFlow} />
       </>
@@ -65,6 +101,7 @@ export function App() {
     <>
       {page}
       <SignOutDialog flow={signOutFlow} />
+      <ReauthDialog recovery={recovery} />
     </>
   );
 }

@@ -101,6 +101,11 @@ export class SignOutFlow {
     return this.logout(this.run, this.phase.discard);
   };
 
+  /** Left a lost session without signing in again: report local copies that could not be deleted. */
+  reportNotDeleted = (notDeleted: string[]) => {
+    if (notDeleted.length && this.phase.step === 'idle') this.set({ step: 'signed-out', notDeleted });
+  };
+
   /** The app signed out for another reason (e.g. the session expired): abandon this run. */
   reset = () => {
     if (this.phase.step !== 'idle' && this.phase.step !== 'signed-out') this.end();

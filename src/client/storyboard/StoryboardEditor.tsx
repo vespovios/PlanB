@@ -13,7 +13,7 @@ import {
   type StoryboardInput,
   type StoryboardObject,
 } from '../../shared/storyboard';
-import { ApiError, api, assetUrl } from '../api';
+import { ApiError, api, assetUrl, sessionUserId } from '../api';
 import type { EpisodeSync } from '../sync';
 import { storeLocalCopy, useUnsavedDraft } from '../saves';
 import { Confirm, capturePointer } from '../components/ui';
@@ -38,7 +38,19 @@ interface Doc {
   objects: StoryboardObject[];
 }
 
-const draftKey = (episodeId: string, sceneId: string) => `planb:storyboard-draft:${episodeId}:${sceneId}`;
+/** Unsaved drawings are kept per account, so another account signed in on this browser never gets them. */
+const draftKey = (episodeId: string, sceneId: string) => `planb:storyboard-draft:${sessionUserId() ?? 'signed-out'}:${episodeId}:${sceneId}`;
+/** Copies made before they were per account; only offered when the episode opens, i.e. to its owner. */
+const legacyDraftKey = (episodeId: string, sceneId: string) => `planb:storyboard-draft:${episodeId}:${sceneId}`;
+/** Removes this drawing's copies; true only if they are confirmed gone. */
+function removeDraftCopies(episodeId: string, sceneId: string): boolean {
+  try {
+    for (const key of [draftKey(episodeId, sceneId), legacyDraftKey(episodeId, sceneId)]) localStorage.removeItem(key);
+    return localStorage.getItem(draftKey(episodeId, sceneId)) === null && localStorage.getItem(legacyDraftKey(episodeId, sceneId)) === null;
+  } catch {
+    return false;
+  }
+}
 
 function fromScene(scene: Scene): Doc {
   const sb = scene.storyboard;
@@ -173,23 +185,18 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
     discard: () => {
       discardedRef.current = true;
       setCopied(null);
-      try {
-        localStorage.removeItem(draftKey(episodeId, scene.id));
-        return localStorage.getItem(draftKey(episodeId, scene.id)) === null;
-      } catch {
-        return false;
-      }
+      return removeDraftCopies(episodeId, scene.id);
     },
   });
 
   // Offer to recover a drawing that was not saved (closed tab, failed save, lost connection).
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(draftKey(episodeId, scene.id));
+      const raw = localStorage.getItem(draftKey(episodeId, scene.id)) ?? localStorage.getItem(legacyDraftKey(episodeId, scene.id));
       if (raw) {
         const d = JSON.parse(raw) as { doc: Doc; at: string };
         if (JSON.stringify(d.doc) !== JSON.stringify(saved)) setRestorable(d);
-        else localStorage.removeItem(draftKey(episodeId, scene.id));
+        else removeDraftCopies(episodeId, scene.id);
       }
     } catch {
       /* ignore corrupt draft */
@@ -471,7 +478,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
       }
       // Saved: no longer a draft, even before the editor closes.
       releaseDraft();
-      localStorage.removeItem(draftKey(episodeId, scene.id));
+      removeDraftCopies(episodeId, scene.id);
       onClose();
     } catch (e) {
       setError(`Not saved: ${(e as Error).message} Your drawing is still here.`);
@@ -606,7 +613,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
                 type="button"
                 className="btn small"
                 onClick={() => {
-                  localStorage.removeItem(draftKey(episodeId, scene.id));
+                  removeDraftCopies(episodeId, scene.id);
                   setRestorable(null);
                 }}
               >
@@ -697,7 +704,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
           danger
           onCancel={() => setConfirmCancel(false)}
           onConfirm={() => {
-            localStorage.removeItem(draftKey(episodeId, scene.id));
+            removeDraftCopies(episodeId, scene.id);
             onClose();
           }}
         />
