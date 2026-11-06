@@ -13,7 +13,8 @@ const noop = () => undefined;
 export function LeaveDialog({ guard }: { guard: NavigationGuard }) {
   const phase = useSyncExternalStore(guard.subscribe, guard.getSnapshot);
   useInertApp(phase.step !== 'idle');
-  if (phase.step === 'idle') return null;
+  // 'moving': approved, the history step is landing; nothing to ask, the page stays inert meanwhile.
+  if (phase.step === 'idle' || phase.step === 'moving') return null;
 
   let dialog: React.ReactNode;
   if (phase.step === 'saving') {
@@ -38,6 +39,7 @@ export function LeaveDialog({ guard }: { guard: NavigationGuard }) {
     );
   } else {
     const kinds = phase.report.issues.map((i) => i.kind);
+    const scene = phase.scope !== 'page' && phase.scope.zone === 'scene';
     const list = (
       <ul className="signout-issues">
         {phase.report.issues.map((i, n) => (
@@ -51,7 +53,7 @@ export function LeaveDialog({ guard }: { guard: NavigationGuard }) {
     dialog =
       phase.step === 'blocked' ? (
         <Modal
-          title="Leave this page?"
+          title={scene ? 'Leave this scene?' : 'Leave this page?'}
           onClose={guard.stay}
           footer={
             <>
@@ -75,7 +77,7 @@ export function LeaveDialog({ guard }: { guard: NavigationGuard }) {
             <p className="muted small">Saves already sent may still complete; PlanB has no answer for them yet.</p>
           )}
           {kinds.includes('conflict') && <p className="muted small">Choose Stay to pick Keep mine or Use newer.</p>}
-          {phase.scope === 'drafts' && <p className="muted small">Text typed but not added yet is not saved automatically.</p>}
+          {phase.scope !== 'page' && <p className="muted small">Text typed but not added yet, and an open drawing, are not saved automatically.</p>}
         </Modal>
       ) : (
         <Modal

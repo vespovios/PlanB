@@ -1,7 +1,7 @@
 // Save coordinator: one place that knows about every piece of work that is not yet confirmed
 // by the server, so sign-out, session expiry and navigation can wait for it, hold it, or tell
 // the user exactly what is still at risk. It never saves or discards anything by itself.
-import { useCallback, useEffect, useRef } from 'react';
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react';
 
 /**
  * confirmed: nothing outstanding. blocked: work is kept on this page but cannot be saved without
@@ -33,6 +33,8 @@ export interface SaveIssue {
   episodeId?: string;
   count: number;
   message: string;
+  /** Drafts only: the parts of the page whose unmounting drops them (e.g. 'tab', 'scene'). */
+  zones?: string[];
 }
 
 export interface SaveReport {
@@ -74,7 +76,7 @@ export const DEFAULT_SETTLE_MS = 10_000;
 
 export class SaveCoordinator {
   private participants = new Set<SaveParticipant>();
-  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; discard?: () => boolean | void }>();
+  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; zones: string[]; discard?: () => boolean | void }>();
   /** Why writes are frozen (e.g. 'signout', 'auth'); writes resume only when no reason is left. */
   private frozenBy = new Set<string>();
 
@@ -95,9 +97,9 @@ export class SaveCoordinator {
    * `discard` clears the input (and any local copy) when the user explicitly discards it; it
    * returns false if a local copy could not be deleted.
    */
-  addDraft(label: string, opts: { episodeId?: string; retained?: boolean; discard?: () => boolean | void } = {}): () => void {
+  addDraft(label: string, opts: { episodeId?: string; retained?: boolean; zones?: string[]; discard?: () => boolean | void } = {}): () => void {
     const key = Symbol(label);
-    this.drafts.set(key, { label, episodeId: opts.episodeId, retained: !!opts.retained, discard: opts.discard });
+    this.drafts.set(key, { label, episodeId: opts.episodeId, retained: !!opts.retained, zones: opts.zones ?? [], discard: opts.discard });
     return () => this.drafts.delete(key);
   }
 
@@ -157,6 +159,7 @@ export class SaveCoordinator {
         episodeId: d.episodeId,
         count: 1,
         message: `${d.label} is not saved${d.retained ? ' (a copy is kept in this browser)' : ''}.`,
+        zones: d.zones,
       }),
     );
     return summarise(issues);
@@ -172,10 +175,17 @@ export class SaveCoordinator {
     this.participants.forEach((p) => p.retryHeld());
   }
 
-  /** Explicit discard of unsaved editor input only (engines untouched). Returns copies not deleted. */
-  discardDrafts(): string[] {
-    const drafts = [...this.drafts.values()];
-    this.drafts.clear();
+  /**
+   * Explicit discard of unsaved editor input only (engines untouched): all of it, or only what lives
+   * in one zone of the page. Returns copies not deleted.
+   */
+  discardDrafts(zone?: string): string[] {
+    const drafts: { label: string; discard?: () => boolean | void }[] = [];
+    this.drafts.forEach((d, key) => {
+      if (zone && !d.zones.includes(zone)) return;
+      drafts.push(d);
+      this.drafts.delete(key);
+    });
     return this.runDiscards(drafts);
   }
 
@@ -236,22 +246,43 @@ export function storeLocalCopy(key: string, value: string, storage?: Pick<Storag
 }
 
 /**
- * Registers an editor's unsaved input with the coordinator while `active` is true. `discard` is
- * called only if the user explicitly discards unsaved work (e.g. "Discard and sign out").
+ * The parts of the page a draft lives in, so moving away from one (another tab, another scene, closing
+ * the scene sheet) knows which drafts it would drop. Drafts outside every zone only end with the page.
  */
-export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean; discard?: () => boolean | void } = {}) {
+const DraftZoneContext = createContext<string[]>([]);
+export function DraftZone({ name, children }: { name: string; children: ReactNode }) {
+  const outer = useContext(DraftZoneContext);
+  return createElement(DraftZoneContext.Provider, { value: [...outer, name] }, children);
+}
+
+/**
+ * Registers an editor's unsaved input with the coordinator while `active` is true. `discard` is
+ * called only if the user explicitly discards unsaved work (e.g. "Discard and sign out"). `zones`
+ * adds zones to those of the enclosing DraftZones.
+ */
+export function useUnsavedDraft(
+  label: string,
+  active: boolean,
+  opts: { episodeId?: string; retained?: boolean; zones?: string[]; discard?: () => boolean | void } = {},
+) {
   const discard = useRef(opts.discard);
   discard.current = opts.discard;
   const release = useRef<(() => void) | null>(null);
+  const zones = [...useContext(DraftZoneContext), ...(opts.zones ?? [])].join(' ');
   useEffect(() => {
     if (!active) return;
-    const done = saves.addDraft(label, { episodeId: opts.episodeId, retained: opts.retained, discard: () => discard.current?.() });
+    const done = saves.addDraft(label, {
+      episodeId: opts.episodeId,
+      retained: opts.retained,
+      zones: zones ? zones.split(' ') : [],
+      discard: () => discard.current?.(),
+    });
     release.current = done;
     return () => {
       done();
       if (release.current === done) release.current = null;
     };
-  }, [label, active, opts.episodeId, opts.retained]);
+  }, [label, active, opts.episodeId, opts.retained, zones]);
   /** Releases the draft at once (e.g. the moment its save is confirmed), without waiting for a re-render. */
   return useCallback(() => {
     release.current?.();

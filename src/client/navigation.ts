@@ -1,17 +1,19 @@
 // Navigation that never silently drops unsaved work. The page being left stays mounted until the
 // move is decided: clean moves happen at once; otherwise saving is tried first (bounded) and the
 // user chooses Stay, Retry or an explicit Leave without saving.
+import { createContext, useContext } from 'react';
 import { parseRoute, type Route } from './router';
 import { saves as defaultCoordinator, type SaveCoordinator, type SaveReport } from './saves';
 
 /**
- * 'drafts': moving between tabs of the same episode keeps its save engine, but tab content (typed
- * new shots, an open drawing…) unmounts. 'page': leaving the page ends its engine too.
+ * 'page': leaving the page ends its save engine and everything on it. { zone }: a move inside the
+ * page that unmounts only one part of it ('tab' when switching tabs of an episode, 'scene' when
+ * switching scenes or closing the scene sheet), so only drafts living in that zone are at stake.
  */
-export type NavScope = 'page' | 'drafts';
+export type NavScope = 'page' | { zone: string };
 
 export function navScope(from: Route, to: Route): NavScope {
-  return from.name === 'episode' && to.name === 'episode' && from.id === to.id ? 'drafts' : 'page';
+  return from.name === 'episode' && to.name === 'episode' && from.id === to.id ? { zone: 'tab' } : 'page';
 }
 
 export type NavPhase =
@@ -19,19 +21,27 @@ export type NavPhase =
   | { step: 'saving' }
   | { step: 'blocked'; scope: NavScope; report: SaveReport }
   | { step: 'confirm'; scope: NavScope; report: SaveReport }
+  /** Approved; waiting for the move to actually happen (a history step lands). */
+  | { step: 'moving' }
   /** Left after discarding, but a local copy could not be deleted. */
   | { step: 'left'; notDeleted: string[] };
 
-const draftsOnly = (r: SaveReport): SaveReport => {
-  const issues = r.issues.filter((i) => i.kind === 'draft');
+const inZone = (r: SaveReport, zone: string): SaveReport => {
+  const issues = r.issues.filter((i) => i.kind === 'draft' && (i.zones ?? []).includes(zone));
   return { outcome: issues.length ? 'blocked' : 'confirmed', issues };
 };
+
+/**
+ * Carries out an approved move. Call `arrive()` at the moment the move takes effect: it returns false
+ * if the move was abandoned meanwhile (then do not move). Call `fail()` if it could not happen.
+ */
+export type Move = (arrive: () => boolean, fail: () => void) => void;
 
 export class NavigationGuard {
   private phase: NavPhase = { step: 'idle' };
   private listeners = new Set<() => void>();
   private run = 0;
-  private pending: { scope: NavScope; proceed: () => void; cancel: () => void } | null = null;
+  private pending: { scope: NavScope; move: Move; cancel: () => void } | null = null;
   private readonly c: SaveCoordinator;
 
   constructor(private deps: { coordinator?: SaveCoordinator; settleMs?: number } = {}) {
@@ -54,7 +64,7 @@ export class NavigationGuard {
 
   private report(scope: NavScope) {
     const r = this.c.report();
-    return scope === 'drafts' ? draftsOnly(r) : r;
+    return scope === 'page' ? r : inZone(r, scope.zone);
   }
 
   /** True if the move can happen at once (nothing it would drop). Synchronous: clean moves stay instant. */
@@ -62,12 +72,19 @@ export class NavigationGuard {
     return this.report(scope).outcome === 'confirmed';
   }
 
-  /** A move that is not clean: try to save first, then proceed or ask. */
-  decide(scope: NavScope, proceed: () => void, cancel: () => void) {
+  /** A move that is not clean: try to save first (whole page only), then move or ask. */
+  decide(scope: NavScope, move: Move, cancel: () => void) {
     if (this.busy) return cancel();
-    this.pending = { scope, proceed, cancel };
+    this.pending = { scope, move, cancel };
     return this.check(this.run);
   }
+
+  /** A change inside the page that unmounts one zone (e.g. another scene): runs `action` once allowed. */
+  local = (zone: string, action: () => void) => {
+    if (this.busy) return;
+    if (this.isClean({ zone })) return action();
+    void this.decide({ zone }, (arrive) => arrive() && action(), () => undefined);
+  };
 
   stay = () => {
     if (this.phase.step === 'left') return this.set({ step: 'idle' });
@@ -76,7 +93,7 @@ export class NavigationGuard {
   };
 
   retry = () => {
-    if (this.phase.step !== 'blocked' || this.phase.scope === 'drafts') return Promise.resolve();
+    if (this.phase.step !== 'blocked' || this.phase.scope !== 'page') return Promise.resolve();
     this.c.retryHeld();
     return this.check(this.run);
   };
@@ -91,15 +108,14 @@ export class NavigationGuard {
     if (this.phase.step !== 'confirm') return;
     this.c.thaw('navigate');
     const report = this.report(this.phase.scope);
-    if (report.outcome === 'confirmed') return this.finish([]);
+    if (report.outcome === 'confirmed') return this.approve(false);
     this.set({ step: 'blocked', scope: this.phase.scope, report });
   };
 
-  /** Explicit: discard what this move would drop, then move. */
+  /** Explicit: discard what this move would drop, at the moment the move happens. */
   confirmDiscard = () => {
     if (this.phase.step !== 'confirm') return;
-    const notDeleted = this.phase.scope === 'drafts' ? this.c.discardDrafts() : this.c.discardAll();
-    this.finish(notDeleted);
+    this.approve(true);
   };
 
   /** The session was lost (or a sign-out began): abandon the move and stay. */
@@ -107,21 +123,37 @@ export class NavigationGuard {
     if (this.busy) this.end(false);
   };
 
-  private end(proceeded: boolean) {
+  private end(moved: boolean) {
     this.run++;
     const p = this.pending;
     this.pending = null;
     this.c.thaw('navigate');
     this.set({ step: 'idle' });
-    if (!proceeded) p?.cancel();
+    if (!moved) p?.cancel();
   }
 
-  private finish(notDeleted: string[]) {
-    const p = this.pending;
-    // Move first (the page being left unmounts and its engine stops), then let saving resume.
-    p?.proceed();
-    this.end(true);
-    if (notDeleted.length) this.set({ step: 'left', notDeleted });
+  /**
+   * Approved: writes stay frozen and nothing is discarded until the move actually happens. A history
+   * step can take a moment, and another flow may take over the page meanwhile (then arrive() is false).
+   */
+  private approve(discard: boolean) {
+    const p = this.pending!;
+    const run = this.run;
+    this.c.freeze('navigate');
+    this.set({ step: 'moving' });
+    p.move(
+      () => {
+        if (run !== this.run) return false;
+        const scope = p.scope;
+        const notDeleted = !discard ? [] : scope === 'page' ? this.c.discardAll() : this.c.discardDrafts(scope.zone);
+        this.end(true);
+        if (notDeleted.length) this.set({ step: 'left', notDeleted });
+        return true;
+      },
+      () => {
+        if (run === this.run) this.end(false);
+      },
+    );
   }
 
   private async check(run: number) {
@@ -133,10 +165,18 @@ export class NavigationGuard {
     }
     // Freeze, then look again synchronously: nothing can be added between this report and the move.
     this.c.freeze('navigate');
-    if (this.report(scope).outcome === 'confirmed') return this.finish([]);
+    if (this.report(scope).outcome === 'confirmed') return this.approve(false);
     this.c.thaw('navigate');
     this.set({ step: 'blocked', scope, report: this.report(scope) });
   }
+}
+
+export const NavGuardContext = createContext<NavigationGuard | null>(null);
+
+/** For changes inside a page that unmount one zone: `(zone, action)` runs `action` once allowed. */
+export function useLocalGuard() {
+  const guard = useContext(NavGuardContext);
+  return (zone: string, action: () => void) => (guard ? guard.local(zone, action) : action());
 }
 
 /**
@@ -149,7 +189,7 @@ export class HistoryNav {
   private index: number;
   private listeners = new Set<() => void>();
   /** A Back/Forward the user approved, on its way to this entry. */
-  private approving: { index: number; hash: string } | null = null;
+  private approving: { index: number; hash: string; arrive: () => boolean; fail: () => void } | null = null;
   /**
    * One history.go() of ours is under way to put the address back. Only one at a time: history.go
    * is relative to wherever the browser is when it runs, so each correction is computed from the
@@ -208,6 +248,13 @@ export class HistoryNav {
     });
   };
 
+  /** Drops an approved Back/Forward that has not landed: the page on screen stays. */
+  private abandonApproval = () => {
+    const a = this.approving;
+    this.approving = null;
+    a?.fail();
+  };
+
   private onClick = (e: MouseEvent) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const a = (e.target as Element | null)?.closest?.('a');
@@ -226,15 +273,26 @@ export class HistoryNav {
       history.replaceState({ ...(st ?? {}), planbIndex: idx }, '', location.href);
     }
     const hash = location.hash || '#/';
-    if (this.approving && idx === this.approving.index) {
-      const target = this.approving;
-      this.approving = null;
-      this.index = target.index;
-      this.commit(target.hash);
-      return;
-    }
     const correction = this.correcting;
     this.correcting = false;
+    if (this.approving) {
+      const target = this.approving;
+      if (idx === target.index && hash === target.hash) {
+        this.approving = null;
+        // Arrived. Only now does the page change, and only if nothing took over the page meanwhile.
+        if (!this.deps.locked() && target.arrive()) {
+          this.index = idx;
+          this.commit(hash);
+        } else {
+          target.fail();
+          this.restore(idx);
+        }
+        return;
+      }
+      // Our correction landing first is expected; anything else interrupts the approved move.
+      if (idx === this.index && correction) return;
+      this.abandonApproval();
+    }
     if (idx === this.index) return; // back on the entry that is shown (e.g. a correction landing)
     const delta = idx - this.index;
     const from = parseRoute(this.committed);
@@ -249,10 +307,10 @@ export class HistoryNav {
     // Put the address back on the page still shown, then decide (or just stay, if owned).
     this.restore(idx);
     if (owned || correction) return;
-    this.deps.guard.decide(
+    void this.deps.guard.decide(
       navScope(from, to),
-      () => {
-        this.approving = { index: this.index + delta, hash };
+      (arrive, fail) => {
+        this.approving = { index: this.index + delta, hash, arrive, fail };
         history.go(delta);
       },
       () => undefined,
@@ -263,6 +321,6 @@ export class HistoryNav {
     if (this.deps.locked() || this.deps.guard.busy) return;
     const scope = navScope(parseRoute(this.committed), parseRoute(hash));
     if (this.deps.guard.isClean(scope)) return go();
-    this.deps.guard.decide(scope, go, () => undefined);
+    void this.deps.guard.decide(scope, (arrive, fail) => (this.deps.locked() ? fail() : arrive() && go()), () => undefined);
   }
 }
