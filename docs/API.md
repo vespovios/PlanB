@@ -4,7 +4,7 @@ The browser, the REST API and the MCP adapter all call the same server functions
 
 ## Authentication
 
-- **Browser:** `POST /api/auth/login` sets an `HttpOnly` session cookie. Writes with a cookie must also send the header `x-planb-csrf: 1`.
+- **Browser:** `POST /api/auth/login` sets an `HttpOnly` session cookie. Writes with a cookie must also send the header `x-planb-csrf: 1`. The browser app also sends `x-planb-user: <user id>`; if the cookie's session belongs to a different account (for example another tab signed in as someone else), the request is refused with 401 and `code: "session_user_changed"`.
 - **Agent:** `Authorization: Bearer planb_…`, a token created in Settings. Agent tokens can use every episode, asset, export and MCP endpoint, but not `/api/tokens` or password changes.
 - Another account's resources return `404`, the same as missing ones.
 

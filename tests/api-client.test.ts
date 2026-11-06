@@ -22,3 +22,39 @@ describe('api request', () => {
     await expect(api.changes('ep', 1, [])).rejects.toMatchObject({ status: 413 });
   });
 });
+
+describe('session identity', () => {
+  const lost: unknown[] = [];
+  const target = new EventTarget();
+  target.addEventListener('planb:signed-out', (e) => lost.push((e as CustomEvent).detail));
+
+  it('sends the signed-in account, and reports a 401 for the current session', async () => {
+    vi.stubGlobal('window', target);
+    const { setSessionUser } = await import('../src/client/api.js');
+    setSessionUser('us_alice');
+    let headers: Record<string, string> = {};
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return { ok: false, status: 401, text: async () => JSON.stringify({ error: 'Please sign in.' }) } as Response;
+    });
+    await expect(api.changes('ep', 1, [])).rejects.toMatchObject({ status: 401 });
+    expect(headers['x-planb-user']).toBe('us_alice');
+    expect(lost).toEqual([{ userId: 'us_alice', code: undefined }]);
+  });
+
+  it('a late 401 for a session replaced since is not reported, and is retried like a lost connection', async () => {
+    vi.stubGlobal('window', target);
+    const { setSessionUser } = await import('../src/client/api.js');
+    setSessionUser('us_alice');
+    lost.length = 0;
+    let answer!: (r: Response) => void;
+    vi.stubGlobal('fetch', () => new Promise<Response>((r) => (answer = r)));
+    const pending = api.changes('ep', 1, []);
+    await Promise.resolve();
+    setSessionUser('us_alice'); // signed in again meanwhile
+    answer({ ok: false, status: 401, text: async () => '{}' } as Response);
+    await expect(pending).rejects.toMatchObject({ status: 0, body: { code: 'stale_session' } });
+    expect(lost).toEqual([]);
+    setSessionUser(null);
+  });
+});

@@ -14,7 +14,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * The account this page is signed in as, and a counter bumped on every sign-in or sign-out. The
+ * account goes with each request (the server refuses it for a session of another account); the
+ * counter tells a 401 for the current session from a late one for a session already replaced.
+ */
+let session: { userId: string | null; epoch: number } = { userId: null, epoch: 0 };
+export function setSessionUser(userId: string | null) {
+  session = { userId, epoch: session.epoch + 1 };
+}
+export const sessionUserId = () => session.userId;
+
+/** Fired when the server says the current session is gone (expired, revoked or switched account). */
+export interface SessionLostDetail {
+  userId: string | null;
+  /** 'session_user_changed' when this browser is now signed in to another account. */
+  code?: string;
+}
+
 async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const sent = session;
   let res: Response;
   try {
     res = await fetch(url, {
@@ -22,6 +41,7 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
       credentials: 'same-origin',
       headers: {
         'x-planb-csrf': '1',
+        ...(sent.userId ? { 'x-planb-user': sent.userId } : {}),
         ...(body !== undefined && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
       },
       body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
@@ -46,7 +66,12 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
     if (res.ok) throw lost();
   }
   if (!res.ok) {
-    if (res.status === 401 && !url.endsWith('/login')) window.dispatchEvent(new Event('planb:signed-out'));
+    if (res.status === 401 && !url.endsWith('/login')) {
+      // A late answer for a session that was replaced since (signed in again): not about the current
+      // session. Treated like a lost connection so the work is retried under the current one.
+      if (sent.epoch !== session.epoch) throw new ApiError(0, 'Your earlier session ended; trying again.', { code: 'stale_session' });
+      window.dispatchEvent(new CustomEvent<SessionLostDetail>('planb:signed-out', { detail: { userId: sent.userId, code: data.code as string | undefined } }));
+    }
     const message = typeof data.error === 'string' ? data.error : res.status >= 500 ? 'The server could not save this change.' : `Request failed (${res.status})`;
     // 502/503/504 from a proxy behave like being offline: retry later.
     throw new ApiError(res.status >= 502 && res.status <= 504 ? 0 : res.status, message, data);
