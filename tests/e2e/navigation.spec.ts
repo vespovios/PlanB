@@ -490,3 +490,64 @@ test('+ Scene, Delete scene and Undo ask first when the current scene has a type
   expect((await episode(page, id)).scenes).toHaveLength(original.scenes.length - 1);
   await expect(page.getByLabel('Link label')).toHaveValue('Link typed on scene two');
 });
+
+test('a Plan-tab drawing discarded while its background upload is held: the upload finishing later links nothing; other edits still save', async ({ page }) => {
+  const { id } = await start(page, 'Nav discard held upload');
+  await page.goto(`/#/e/${id}/shots`);
+  await page.goto(`/#/e/${id}/plan`);
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/episodes/*/assets', async (route) => {
+    await held; // the upload reaches the server only after the discard
+    await route.continue();
+  });
+  const writes: string[] = [];
+  page.on('request', (r) => r.url().includes('/changes') && writes.push(r.postData() ?? ''));
+  const uploaded = page.waitForRequest('**/api/episodes/*/assets');
+  await page.locator('.sb-toolbar input[type=file]').setInputFiles(await samplePngFile());
+  await uploaded;
+  await page.goBack(); // Plan → Shots: the drawing lives in the Plan tab
+  await expect(leave(page)).toContainText('The drawing for');
+  await leave(page).getByRole('button', { name: 'Leave without saving…' }).click();
+  await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/shots`);
+  await expect(page.locator('.sb-overlay')).toHaveCount(0);
+  const assetAnswered = page.waitForResponse('**/api/episodes/*/assets');
+  release();
+  expect((await assetAnswered).status()).toBe(201);
+  await page.waitForTimeout(1500);
+  expect(writes.some((w) => w.includes('addImage'))).toBe(false);
+  expect((await episode(page, id)).scenes[0].attachments).toHaveLength(0);
+  // The episode's engine was not discarded: a normal edit still saves.
+  await page.goForward();
+  await page.getByLabel('What happens').fill('Still saving after the discard');
+  await waitSaved(page);
+  expect((await episode(page, id)).scenes[0].description).toBe('Still saving after the discard');
+});
+
+test('a drawing save held while the drawing is discarded: its late answer does not close a newly opened drawing', async ({ page }) => {
+  const { id } = await start(page, 'Nav discard held save');
+  await rail(page, 'Storyboard').click();
+  await page.goto(`/#/e/${id}/plan`);
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  await scribble(page);
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/episodes/*/changes', async (route) => {
+    if (route.request().postData()?.includes('saveStoryboard')) await held;
+    await route.continue();
+  });
+  await page.locator('.sb-head').getByRole('button', { name: 'Save' }).click(); // sent, answer held
+  await page.goBack(); // Plan → Storyboard tab: asks about the open drawing
+  await leave(page).getByRole('button', { name: 'Leave without saving…' }).click();
+  await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/storyboard`);
+  // A new drawing, opened from the Storyboard tab, while the old save is still unanswered.
+  await page.getByRole('button', { name: /storyboard for/ }).first().click();
+  await expect(page.locator('.sb-overlay')).toBeVisible();
+  release();
+  await page.waitForTimeout(1500);
+  // The old save may complete on the server (it was already sent) but must not close this editor.
+  await expect(page.locator('.sb-overlay')).toBeVisible();
+});

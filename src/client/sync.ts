@@ -33,6 +33,9 @@ const ambiguous = (e: unknown) => !(e instanceof ApiError) || e.offline || e.sta
 /** A discarded engine never writes again; a direct save started or resumed afterwards fails with this. */
 const discardedError = () => new ApiError(410, 'This work was discarded when you signed out. It was not sent.', { code: 'discarded' });
 
+/** The owner of a direct save (e.g. a drawing) discarded it: it is not sent, and nothing is reported. */
+const abandonedError = () => new ApiError(410, 'This change was discarded. It was not sent.', { code: 'abandoned' });
+
 const frozenError = () =>
   new ApiError(423, 'Saving is paused right now. This change was not sent; it is still here.', { code: 'writes_frozen' });
 
@@ -591,16 +594,17 @@ export class EpisodeSync implements SaveParticipant {
    * restores, where the result must be confirmed before the UI moves on). Throws ApiError.
    * `kept`: the caller still holds the change (an open editor), so a definite failure is not
    * recorded as lost. `nested`: called inside track(), which counts the save as running.
+   * `abandoned`: the caller's own work was discarded (checked again right before sending).
    */
-  commitNow(operations: Operation[], summary?: string, opts: { kept?: boolean; nested?: boolean } = {}) {
+  commitNow(operations: Operation[], summary?: string, opts: { kept?: boolean; nested?: boolean; abandoned?: () => boolean } = {}) {
     const label = summary ?? 'A change';
-    return this.direct(label, { kept: opts.kept, writes: true, count: !opts.nested }, () => {
+    return this.direct(label, { kept: opts.kept, writes: true, count: !opts.nested, abandoned: opts.abandoned }, () => {
       clearTimeout(this.timer);
       return this.exclusive(async () => {
-        this.assertWritable();
+        this.assertWritable(opts.abandoned);
         await this.flushInner();
         // Writes may have been frozen, or this work discarded, while that flush was waiting for its answer.
-        this.assertWritable();
+        this.assertWritable(opts.abandoned);
         if (this.queued.length || this.conflicted.length) {
           throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
         }
@@ -644,13 +648,17 @@ export class EpisodeSync implements SaveParticipant {
    * Runs a save made outside the queue (e.g. upload then link) so the coordinator can wait for it
    * and knows if it fails. Pass `nested: true` to commitNow calls inside it. Refused while frozen.
    */
-  track<T>(label: string, fn: () => Promise<T>, opts: { kept?: boolean } = {}): Promise<T> {
-    return this.direct(label, { kept: opts.kept }, fn);
+  track<T>(label: string, fn: () => Promise<T>, opts: { kept?: boolean; abandoned?: () => boolean } = {}): Promise<T> {
+    return this.direct(label, { kept: opts.kept, abandoned: opts.abandoned }, fn);
   }
 
-  private async direct<T>(label: string, o: { kept?: boolean; writes?: boolean; count?: boolean }, fn: () => Promise<T>): Promise<T> {
+  private async direct<T>(
+    label: string,
+    o: { kept?: boolean; writes?: boolean; count?: boolean; abandoned?: () => boolean },
+    fn: () => Promise<T>,
+  ): Promise<T> {
     const run = (async () => {
-      this.assertWritable();
+      this.assertWritable(o.abandoned);
       return fn();
     })();
     if (o.count !== false) this.active.add(run);
@@ -666,8 +674,9 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   /** Direct saves check this when they start and again before each request they send. */
-  private assertWritable() {
+  private assertWritable(abandoned?: () => boolean) {
     if (this.discarded) throw discardedError();
+    if (abandoned?.()) throw abandonedError();
     if (saves.isFrozen) throw frozenError();
   }
 
@@ -676,7 +685,8 @@ export class EpisodeSync implements SaveParticipant {
    * saved, which matters unless the caller still holds the change (an open editor keeps it).
    */
   private recordFailure(e: unknown, label: string, o: { kept?: boolean; writes?: boolean }) {
-    if (this.discarded) return;
+    // Explicitly discarded by its owner: not a failure to report.
+    if (this.discarded || (e instanceof ApiError && e.body.code === 'abandoned')) return;
     if (e && typeof e === 'object') {
       if (this.handled.has(e)) return;
       this.handled.add(e);

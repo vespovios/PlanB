@@ -801,3 +801,53 @@ describe('first load refused because the session had just ended', () => {
     expect(e.getSnapshot().episode?.title).toBe('newer');
   });
 });
+
+describe('a direct save whose owner discarded it', () => {
+  it('is not sent, even after its pre-flush, while the engine’s other edits still are', async () => {
+    const e = await started();
+    const sent: Operation[][] = [];
+    const gate = deferred<void>();
+    server.changes = async (id, base, ops) => {
+      sent.push(ops);
+      if (sent.length === 1) await gate.promise;
+      return apply(id, base, ops);
+    };
+    let gone = false;
+    e.queue(title('engine edit'), 10_000);
+    const direct = e.commitNow([{ op: 'updateEpisode', fields: { brief: 'from a discarded drawing' } }], 'Saved storyboard', { kept: true, abandoned: () => gone });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    gone = true; // the drawing was discarded while the pre-flush was in flight
+    gate.resolve();
+    await expect(direct).rejects.toMatchObject({ body: { code: 'abandoned' } });
+    expect(sent).toHaveLength(1);
+    expect([current.title, current.brief]).toEqual(['engine edit', '']);
+    expect(saves.report()).toEqual({ outcome: 'confirmed', issues: [] });
+    // The engine keeps working for everything else.
+    e.queue({ op: 'updateEpisode', fields: { brief: 'later edit' } });
+    await vi.waitFor(() => expect(current.brief).toBe('later edit'));
+  });
+
+  it('an upload finishing after its owner discarded it does not link, and reports nothing', async () => {
+    const e = await started();
+    const sent: Operation[][] = [];
+    server.changes = async (id, base, ops) => {
+      sent.push(ops);
+      return apply(id, base, ops);
+    };
+    let gone = false;
+    const upload = deferred<void>();
+    const run = e.track(
+      'Adding background image',
+      async () => {
+        await upload.promise;
+        await e.commitNow([title('linked')], 'Added image reference', { nested: true, abandoned: () => gone });
+      },
+      { abandoned: () => gone },
+    );
+    gone = true;
+    upload.resolve();
+    await expect(run).rejects.toMatchObject({ body: { code: 'abandoned' } });
+    expect(sent).toHaveLength(0);
+    expect(saves.report().outcome).toBe('confirmed');
+  });
+});

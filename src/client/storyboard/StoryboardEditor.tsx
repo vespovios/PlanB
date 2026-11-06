@@ -176,6 +176,8 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   // An open drawing with changes is never saved or discarded automatically; the coordinator only reports it.
   // Set when the user explicitly discarded unsaved work (sign out without saving): no copy is written again.
   const discardedRef = useRef(false);
+  /** This drawing was explicitly discarded: its uploads and saves must not send or act any more. */
+  const gone = () => discardedRef.current;
   // A background upload is about to change the drawing, so it counts as unsaved from the start;
   // the drawing's own change then takes over in the same render, with no gap.
   const releaseDraft = useUnsavedDraft(`The drawing for "${scene.title}"`, dirty || uploading, {
@@ -426,7 +428,9 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
     if (file.size > 10 * 1024 * 1024) return setError('Images can be at most 10 MiB.');
     setUploading(true);
     try {
-      const id = await engine.track(`Adding background image "${file.name}"`, async () => {
+      const id = await engine.track(
+        `Adding background image "${file.name}"`,
+        async () => {
         const { asset } = await api.upload(episodeId, file, file.name);
         const id = randomId('at');
         engine.rememberAsset(asset.id, asset);
@@ -434,13 +438,16 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
         await engine.commitNow(
           [{ op: 'addImage', sceneId: scene.id, id, assetId: asset.id, label: file.name.replace(/\.[^.]+$/, '').slice(0, 80) }],
           `Added image reference to "${scene.title}"`,
-          { nested: true },
+          { nested: true, abandoned: gone },
         );
         return id;
-      });
+        },
+        { abandoned: gone },
+      );
+      if (gone()) return;
       setDoc((d) => ({ ...d, backgroundAttachmentId: id }));
     } catch (e) {
-      setError((e as Error).message);
+      if (!gone()) setError((e as Error).message);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -459,7 +466,8 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
       objects: doc.objects.map(round),
     };
     // The editor keeps the drawing if this fails, so the failure is not recorded as lost.
-    const attempt = () => engine.commitNow([{ op: 'saveStoryboard', sceneId: scene.id, storyboard }], `Saved storyboard for "${scene.title}"`, { kept: true });
+    const attempt = () =>
+      engine.commitNow([{ op: 'saveStoryboard', sceneId: scene.id, storyboard }], `Saved storyboard for "${scene.title}"`, { kept: true, abandoned: gone });
     try {
       const current = engine.confirmed?.scenes.find((s) => s.id === scene.id)?.storyboard?.savedRevision ?? null;
       if (!force && current !== startRevision) {
@@ -480,12 +488,14 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
         }
         await attempt();
       }
+      // Discarded meanwhile (the save was already sent): leave whatever editor is open now alone.
+      if (gone()) return;
       // Saved: no longer a draft, even before the editor closes.
       releaseDraft();
       removeDraftCopies(episodeId, scene.id);
       onClose();
     } catch (e) {
-      setError(`Not saved: ${(e as Error).message} Your drawing is still here.`);
+      if (!gone()) setError(`Not saved: ${(e as Error).message} Your drawing is still here.`);
     } finally {
       setSaving(false);
     }
