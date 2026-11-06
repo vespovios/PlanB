@@ -2,7 +2,7 @@
 // and "signed out" is shown only once the server confirmed it. Checked against server data and
 // the old session cookie, not just the screen.
 import { expect, test, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
-import { apiAsAgent, createEpisode, login, outcome, samplePngFile, waitSaved } from './helpers';
+import { agentToken, apiAsAgent, createEpisode, login, outcome, samplePngFile, waitSaved } from './helpers';
 
 type PW = PlaywrightWorkerArgs['playwright'];
 
@@ -386,10 +386,19 @@ test('an upload still running past the save wait, then discarded, is never linke
   await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
   let release!: () => void;
   const held = new Promise<void>((r) => (release = r));
+  // Playwright cannot replay a browser file upload, so a real image is uploaded first (by the
+  // agent) and the browser's held upload is answered with it after the sign-out: the client then
+  // really holds an uploaded asset and tries to link it.
+  const fs = await import('node:fs');
+  const real = await page.request.post(`/api/episodes/${id}/assets`, {
+    headers: { authorization: `Bearer ${agentToken()}` },
+    multipart: { file: { name: 'late.png', mimeType: 'image/png', buffer: fs.readFileSync(await samplePngFile()) } },
+  });
+  expect(real.ok()).toBe(true);
+  const realAsset = await real.text();
   await page.route('**/api/episodes/*/assets', async (route) => {
-    const response = await route.fetch(); // the server stores the image while still signed in…
-    await held; // …but the answer arrives only after the sign-out
-    await route.fulfill({ response });
+    await held; // the answer arrives only after the sign-out
+    await route.fulfill({ status: 200, contentType: 'application/json', body: realAsset });
   });
   const writes: string[] = [];
   page.on('request', (r) => r.url().includes('/changes') && writes.push(r.postData() ?? ''));
