@@ -590,3 +590,107 @@ describe('explicit discard', () => {
     await vi.waitFor(() => expect(current.title).toBe('a'));
   });
 });
+
+describe('a discarded engine is terminal', () => {
+  const counting = () => {
+    const sent: Operation[][] = [];
+    const gate = deferred<void>();
+    server.changes = async (id, base, ops) => {
+      sent.push(ops);
+      await gate.promise;
+      return apply(id, base, ops);
+    };
+    return { sent, gate };
+  };
+
+  it('an upload finishing after discard (and after writes resume) does not link', async () => {
+    const e = await started();
+    const { sent } = counting();
+    const upload = deferred<void>();
+    const run = e.track('Adding image', async () => {
+      await upload.promise;
+      await e.commitNow([{ op: 'updateEpisode', fields: { brief: 'linked' } }], 'link', { nested: true });
+    });
+    saves.freeze();
+    saves.discardAll();
+    saves.thaw(); // e.g. signed out, then a new sign-in
+    upload.resolve();
+    await expect(run).rejects.toMatchObject({ status: 410, body: { code: 'discarded' } });
+    expect(sent).toHaveLength(0);
+    expect(saves.isRegistered(e)).toBe(false);
+    expect(saves.report()).toEqual({ outcome: 'confirmed', issues: [] });
+  });
+
+  it('direct saves and restores waiting on the lock are refused after discard', async () => {
+    const e = await started();
+    const { sent, gate } = counting();
+    let restores = 0;
+    server.restore = async () => {
+      restores++;
+      return { episode: current };
+    };
+    e.queue(title('in flight'));
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const direct = e.commitNow([{ op: 'updateEpisode', fields: { brief: 'direct' } }], 'Direct');
+    const restoring = e.restore(1, 1);
+    saves.discardAll();
+    gate.resolve();
+    await expect(direct).rejects.toMatchObject({ status: 410 });
+    await expect(restoring).rejects.toMatchObject({ status: 410 });
+    expect([sent.length, restores]).toEqual([1, 0]);
+  });
+
+  it('discard during commitNow’s own pre-flush stops the direct batch', async () => {
+    const e = await started();
+    const { sent, gate } = counting();
+    e.queue(title('queued first'), 10_000);
+    const direct = e.commitNow([{ op: 'updateEpisode', fields: { brief: 'direct' } }], 'Direct');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    saves.discardAll();
+    gate.resolve();
+    await expect(direct).rejects.toMatchObject({ status: 410 });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('a late answer to a request sent before discard changes nothing and reports nothing', async () => {
+    const e = await started();
+    const { gate } = counting();
+    const before = e.getSnapshot();
+    const direct = e.commitNow([title('sent before discard')], 'Saved storyboard', { kept: true });
+    await tick();
+    saves.discardAll();
+    gate.resolve();
+    await direct; // the server applied it; that cannot be undone, and is not hidden
+    expect(current.title).toBe('sent before discard');
+    expect(e.getSnapshot()).toBe(before);
+    expect(saves.isRegistered(e)).toBe(false);
+
+    // A late failure is not recorded either.
+    server.changes = async () => {
+      throw new ApiError(0, 'Connection lost');
+    };
+    const e2 = await started();
+    const late = e2.commitNow([title('x')], 'Late');
+    saves.discardAll();
+    await expect(late).rejects.toBeDefined();
+    expect(saves.report().outcome).toBe('confirmed');
+  });
+
+  it('nothing on a discarded engine sends or re-registers, even after writes resume', async () => {
+    const e = await started();
+    const { sent } = counting();
+    saves.discardAll();
+    saves.thaw();
+    e.queue(title('typed after discard'));
+    await e.flush();
+    e.retry();
+    e.retryHeld();
+    e.resume();
+    e.start();
+    await e.settle(Date.now() + 200);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(sent).toHaveLength(0);
+    expect(saves.isRegistered(e)).toBe(false);
+    await expect(e.track('Upload', async () => 'x')).rejects.toMatchObject({ status: 410 });
+  });
+});

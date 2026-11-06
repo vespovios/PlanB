@@ -30,6 +30,9 @@ interface Dropped {
 /** No definite answer: the request may have been applied (lost response, proxy or server error). */
 const ambiguous = (e: unknown) => !(e instanceof ApiError) || e.offline || e.status >= 500;
 
+/** A discarded engine never writes again; a direct save started or resumed afterwards fails with this. */
+const discardedError = () => new ApiError(410, 'This work was discarded when you signed out. It was not sent.', { code: 'discarded' });
+
 const frozenError = () =>
   new ApiError(423, 'Saving is paused right now. This change was not sent; it is still here.', { code: 'writes_frozen' });
 
@@ -154,6 +157,7 @@ export class EpisodeSync implements SaveParticipant {
   getSnapshot = () => this.snap;
 
   private emit() {
+    if (this.discarded) return;
     this.snap = this.makeSnapshot();
     this.listeners.forEach((fn) => fn());
     this.releaseIfDone();
@@ -228,7 +232,7 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   private releaseIfDone() {
-    if (this.stopped && this.idle) saves.unregister(this);
+    if (this.discarded || (this.stopped && this.idle)) saves.unregister(this);
   }
 
   get hasUnsaved() {
@@ -275,6 +279,7 @@ export class EpisodeSync implements SaveParticipant {
   private async load() {
     try {
       const { episode } = await api.episode(this.id);
+      if (this.discarded) return;
       this.server = episode;
       this.state = 'saved';
       this.loadError = null;
@@ -286,6 +291,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Fetches the latest saved revision and replays local edits on top of it. */
   async refresh() {
+    if (this.discarded) return;
     return this.exclusive(async () => {
       try {
         const { episode } = await api.episode(this.id);
@@ -301,7 +307,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Queue an edit. Text edits are debounced and merged per field; structural edits save at once. */
   queue(op: Operation, debounceMs = 0) {
-    if (!this.server) return;
+    if (!this.server || this.discarded) return;
     if (op.op === 'deleteScene') {
       const s = this.snap.episode?.scenes.find((x) => x.id === op.sceneId);
       if (s) this.deletedScenes.set(s.id, structuredClone(s));
@@ -352,7 +358,7 @@ export class EpisodeSync implements SaveParticipant {
   /** Save queued edits now (e.g. on blur). Resolves whatever the outcome; see issues(). */
   flush(): Promise<void> {
     clearTimeout(this.timer);
-    if (saves.isFrozen) return Promise.resolve();
+    if (saves.isFrozen || this.discarded) return Promise.resolve();
     return this.exclusive(() => this.flushInner()) as Promise<void>;
   }
 
@@ -456,6 +462,7 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   retry() {
+    if (this.discarded) return;
     this.retryDelay = 2000;
     this.failure = null;
     this.stickyError = false;
@@ -491,6 +498,7 @@ export class EpisodeSync implements SaveParticipant {
    * in use" or "not found" on replay does not prove the earlier attempt succeeded.
    */
   private recordDropped(items: Pending[], source: Dropped['source'], message: string) {
+    if (this.discarded) return;
     const uncertain = items.filter((p) => p.unconfirmed).length;
     if (uncertain) this.dropped.push({ outcome: 'uncertain', source, count: uncertain, message: `May or may not have been saved. ${message}` });
     if (items.length - uncertain) this.dropped.push({ outcome: 'rejected', source, count: items.length - uncertain, message });
@@ -498,6 +506,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Re-applies queued edits on a newer revision, separating real conflicts. */
   private rebase(latest: Episode) {
+    if (this.discarded) return;
     // Merge field edits per target so each keeps the value it originally started from.
     const merged: Pending[] = [];
     for (const p of this.queued) {
@@ -555,6 +564,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Conflict choice: keep my version (save over the newer value) or use the newer saved value. */
   resolveConflict(choice: 'mine' | 'theirs') {
+    if (this.discarded) return;
     const items = this.conflicted;
     this.conflicted = [];
     this.conflictInfo = null;
@@ -581,15 +591,17 @@ export class EpisodeSync implements SaveParticipant {
     return this.direct(label, { kept: opts.kept, writes: true, count: !opts.nested }, () => {
       clearTimeout(this.timer);
       return this.exclusive(async () => {
-        if (saves.isFrozen) throw frozenError();
+        this.assertWritable();
         await this.flushInner();
-        // Writes may have been frozen while that flush was waiting for its answer.
-        if (saves.isFrozen) throw frozenError();
+        // Writes may have been frozen, or this work discarded, while that flush was waiting for its answer.
+        this.assertWritable();
         if (this.queued.length || this.conflicted.length) {
           throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
         }
         try {
           const res = await api.changes(this.id, this.server!.revision, operations, summary);
+          // Sent before a discard: the server may have applied it, but nothing here changes any more.
+          if (this.discarded) return res;
           this.server = res.episode;
           this.state = this.queued.length ? 'pending' : 'saved';
           if (!this.stickyError) this.error = null;
@@ -597,7 +609,7 @@ export class EpisodeSync implements SaveParticipant {
           return res;
         } catch (e) {
           const err = e as ApiError;
-          if (err.status === 409) {
+          if (err.status === 409 && !this.discarded) {
             try {
               this.rebase((await api.episode(this.id)).episode);
             } catch {
@@ -614,7 +626,7 @@ export class EpisodeSync implements SaveParticipant {
   restore(targetRevision: number, baseRevision: number, acknowledgeLaterRevisions = false) {
     return this.direct(`Restoring revision ${targetRevision}`, { writes: true }, () =>
       this.exclusive(async () => {
-        if (saves.isFrozen) throw frozenError();
+        this.assertWritable();
         const { episode } = await api.restore(this.id, targetRevision, baseRevision, acknowledgeLaterRevisions);
         this.adopt(episode);
         return episode;
@@ -632,7 +644,7 @@ export class EpisodeSync implements SaveParticipant {
 
   private async direct<T>(label: string, o: { kept?: boolean; writes?: boolean; count?: boolean }, fn: () => Promise<T>): Promise<T> {
     const run = (async () => {
-      if (saves.isFrozen) throw frozenError();
+      this.assertWritable();
       return fn();
     })();
     if (o.count !== false) this.active.add(run);
@@ -647,11 +659,18 @@ export class EpisodeSync implements SaveParticipant {
     }
   }
 
+  /** Direct saves check this when they start and again before each request they send. */
+  private assertWritable() {
+    if (this.discarded) throw discardedError();
+    if (saves.isFrozen) throw frozenError();
+  }
+
   /**
    * A direct save failed. If it may have reached the server it is uncertain; otherwise it was not
    * saved, which matters unless the caller still holds the change (an open editor keeps it).
    */
   private recordFailure(e: unknown, label: string, o: { kept?: boolean; writes?: boolean }) {
+    if (this.discarded) return;
     if (e && typeof e === 'object') {
       if (this.handled.has(e)) return;
       this.handled.add(e);
@@ -667,6 +686,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Replace the confirmed state after a restore or other direct server call. */
   adopt(episode: Episode) {
+    if (this.discarded) return;
     if (this.queued.length || this.conflicted.length) {
       // Edits made meanwhile are replayed on the new version (or shown as conflicts), never discarded silently.
       this.queued = [...this.conflicted, ...this.queued];
@@ -710,7 +730,7 @@ export class EpisodeSync implements SaveParticipant {
       return Promise.race([p, timeout]).finally(() => clearTimeout(t));
     };
     let triedOffline = false;
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && !this.discarded) {
       // While frozen nothing new is sent, but requests already sent are still waited for.
       const sendable = !saves.isFrozen && this.server && this.queued.length && this.state !== 'error' && !(this.state === 'offline' && triedOffline);
       if (sendable) {
@@ -723,11 +743,14 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   /**
-   * Sign-out "discard": drops every edit, conflict and report held here and stops the engine. A
-   * request already sent cannot be recalled; the server may still apply it, and its answer is ignored.
+   * Sign-out "discard": drops every edit, conflict and report held here and stops the engine for
+   * good. It never sends again: queued, retried, resumed and direct saves (including one waiting
+   * behind a request, or the link step of an upload) are refused. A request already sent cannot be
+   * recalled; the server may still apply it, and its answer changes nothing here.
    */
   discard() {
     this.discarded = true;
+    clearTimeout(this.timer);
     this.queued = [];
     this.conflicted = [];
     this.conflictInfo = null;
@@ -739,7 +762,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Retry saves held after a server error or while offline. Signed-out saves are not resent from here. */
   retryHeld() {
-    if (this.failure === 'auth' || !this.queued.length) return;
+    if (this.discarded || this.failure === 'auth' || !this.queued.length) return;
     if (this.state === 'error' || this.state === 'offline') this.retry();
   }
 
@@ -750,6 +773,7 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Writes were thawed: send what was held. */
   resume() {
+    if (this.discarded) return;
     if (this.queued.length && this.state !== 'error') this.schedule(0);
   }
 
