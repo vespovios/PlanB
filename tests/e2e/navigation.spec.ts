@@ -446,3 +446,47 @@ test('a drawing inside the Plan tab: Back to another tab asks; discard closes it
   await scribble(page);
   await expect.poll(() => draftCopies(page)).toHaveLength(1);
 });
+
+test('+ Scene, Delete scene and Undo ask first when the current scene has a typed link; Stay changes nothing', async ({ page }) => {
+  const { id, original } = await start(page, 'Nav scene actions');
+  const sceneLeave = page.getByRole('dialog', { name: 'Leave this scene?' });
+  const typeLink = async (label: string) => {
+    await page.getByRole('button', { name: '+ References' }).click();
+    await page.getByRole('button', { name: '+ Link' }).click();
+    await page.getByLabel('Link label').fill(label);
+  };
+  await typeLink('Link typed on scene one');
+
+  // + Scene: asks before anything is added.
+  await page.locator('.sequence-foot').getByRole('button', { name: '+ Scene' }).click();
+  await expect(sceneLeave).toContainText('A link being added');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).click();
+  await page.waitForTimeout(800);
+  expect((await episode(page, id)).scenes).toHaveLength(original.scenes.length);
+  await expect(page.getByLabel('Link label')).toHaveValue('Link typed on scene one');
+
+  // Delete scene (after its own confirmation): asks, Stay keeps the scene.
+  await page.getByRole('button', { name: 'Delete scene' }).click();
+  await page.getByRole('dialog', { name: 'Delete scene?' }).getByRole('button', { name: 'Delete scene' }).click();
+  await expect(sceneLeave).toBeVisible();
+  await sceneLeave.getByRole('button', { name: 'Stay' }).click();
+  await page.waitForTimeout(800);
+  expect((await episode(page, id)).scenes.map((s: { id: string }) => s.id)).toEqual(original.scenes.map((s: { id: string }) => s.id));
+  await expect(page.getByLabel('Link label')).toHaveValue('Link typed on scene one');
+
+  // Delete for real (discarding the link), then type a link on the next scene and press Undo.
+  await page.getByRole('button', { name: 'Delete scene' }).click();
+  await page.getByRole('dialog', { name: 'Delete scene?' }).getByRole('button', { name: 'Delete scene' }).click();
+  await sceneLeave.getByRole('button', { name: 'Leave without saving…' }).click();
+  await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
+  await waitSaved(page);
+  expect((await episode(page, id)).scenes).toHaveLength(original.scenes.length - 1);
+  await expect(page.getByLabel('Scene title')).toHaveValue(original.scenes[1].title);
+  await typeLink('Link typed on scene two');
+  await page.getByRole('button', { name: 'Undo' }).click();
+  await expect(sceneLeave).toContainText('A link being added');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).click();
+  await page.waitForTimeout(800);
+  expect((await episode(page, id)).scenes).toHaveLength(original.scenes.length - 1);
+  await expect(page.getByLabel('Link label')).toHaveValue('Link typed on scene two');
+});

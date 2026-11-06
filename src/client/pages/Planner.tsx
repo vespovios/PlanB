@@ -46,31 +46,36 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
       setSelectedId(sid);
       if (mobile) setSheetOpen(true);
     });
-  const addScene = () => {
-    const sid = randomId('sc');
-    const index = selIndex >= 0 ? selIndex + 1 : scenes.length;
-    engine.queue({ op: 'addScene', id: sid, index, scene: { title: 'New scene', durationSeconds: 30 } });
-    setSelectedId(sid);
-    if (mobile) setSheetOpen(true);
-  };
-  const moveScene = (sid: string, index: number) => engine.queue({ op: 'moveScene', sceneId: sid, index });
-  const deleteScene = (scene: Scene) => {
-    const index = scenes.findIndex((s) => s.id === scene.id);
-    engine.queue({ op: 'deleteScene', sceneId: scene.id });
-    setSelectedId(scenes[index + 1]?.id ?? scenes[index - 1]?.id ?? null);
-    setSheetOpen(false);
-    setToast({
-      message: `Deleted “${scene.title}”.`,
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          engine.queue({ op: 'restoreDeletedScene', sceneId: scene.id, index });
-          setSelectedId(scene.id);
-          setToast(null);
-        },
-      },
+  // Adding, deleting and undoing change the selected scene too: ask about its typed input first,
+  // before anything is queued, so Stay leaves the episode exactly as it was.
+  const addScene = () =>
+    guard('scene', () => {
+      const sid = randomId('sc');
+      const index = selIndex >= 0 ? selIndex + 1 : scenes.length;
+      engine.queue({ op: 'addScene', id: sid, index, scene: { title: 'New scene', durationSeconds: 30 } });
+      setSelectedId(sid);
+      if (mobile) setSheetOpen(true);
     });
-  };
+  const moveScene = (sid: string, index: number) => engine.queue({ op: 'moveScene', sceneId: sid, index });
+  const deleteScene = (scene: Scene) =>
+    guard('scene', () => {
+      const index = scenes.findIndex((s) => s.id === scene.id);
+      engine.queue({ op: 'deleteScene', sceneId: scene.id });
+      setSelectedId(scenes[index + 1]?.id ?? scenes[index - 1]?.id ?? null);
+      setSheetOpen(false);
+      setToast({
+        message: `Deleted “${scene.title}”.`,
+        action: {
+          label: 'Undo',
+          onClick: () =>
+            guard('scene', () => {
+              engine.queue({ op: 'restoreDeletedScene', sceneId: scene.id, index });
+              setSelectedId(scene.id);
+              setToast(null);
+            }),
+        },
+      });
+    });
 
   const runtime = (
     <span className="runtime">

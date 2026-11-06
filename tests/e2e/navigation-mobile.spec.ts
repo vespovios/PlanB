@@ -55,3 +55,21 @@ test('phone: closing the scene sheet with a typed shot asks; Stay keeps it; disc
   expect(ep.scenes[0].description).toBe('Edited in the sheet');
   expect(ep.scenes[0].shots.some((s: { description: string }) => s.description === 'Typed in the sheet')).toBe(false);
 });
+
+test('phone: deleting the scene from its sheet with a typed shot asks; Stay keeps scene and text', async ({ page }) => {
+  await login(page);
+  const id = await createEpisode(page, 'Phone sheet delete');
+  await waitSaved(page);
+  const before = (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode.scenes.length;
+  await page.locator('.cards .card-main').first().tap();
+  const sheet = page.getByRole('dialog', { name: /^Scene:/ });
+  await sheet.getByLabel('New shot description').fill('Typed before delete');
+  await sheet.getByRole('button', { name: 'Delete scene' }).tap();
+  await page.getByRole('dialog', { name: 'Delete scene?' }).getByRole('button', { name: 'Delete scene' }).tap();
+  const sceneLeave = page.getByRole('dialog', { name: 'Leave this scene?' });
+  await expect(sceneLeave).toContainText('A new shot typed');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).tap();
+  await page.waitForTimeout(800);
+  expect((await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode.scenes.length).toBe(before);
+  await expect(sheet.getByLabel('New shot description')).toHaveValue('Typed before delete');
+});
