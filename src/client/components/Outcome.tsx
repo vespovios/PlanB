@@ -44,7 +44,7 @@ export function SkipReason({ shot, onChange }: { shot: Shot; onChange: (skipReas
   const [draft, setDraft] = useState('');
   const choosing = shot.outcome === 'skipped' && (shot.skipReason ? editing : editing || justSkipped);
   // Only typed text in a visible reason box counts as unsaved; closing the box clears it.
-  useUnsavedDraft(`A skip reason typed for "${shot.description}"`, choosing && !!draft.trim(), { discard: () => setDraft('') });
+  useUnsavedDraft(`A skip reason typed for "${shot.description}"`, choosing && !!draft.trim(), { zones: ['scene'], discard: () => setDraft('') });
   const close = () => {
     setEditing(false);
     setDraft('');

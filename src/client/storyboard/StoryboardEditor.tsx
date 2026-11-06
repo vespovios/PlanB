@@ -185,7 +185,11 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
     discard: () => {
       discardedRef.current = true;
       setCopied(null);
-      return removeDraftCopies(episodeId, scene.id);
+      const removed = removeDraftCopies(episodeId, scene.id);
+      // Discarded means gone: the editor closes rather than staying open with a drawing that is no
+      // longer kept anywhere. A later drawing opens a fresh editor that keeps copies as usual.
+      onClose();
+      return removed;
     },
   });
 

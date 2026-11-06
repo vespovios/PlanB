@@ -4,7 +4,7 @@ import { saves } from './saves';
 import { SessionRecovery } from './session';
 import { ReauthDialog } from './components/ReauthDialog';
 import { installNavigator, useRoute } from './router';
-import { HistoryNav, NavigationGuard } from './navigation';
+import { HistoryNav, NavGuardContext, NavigationGuard } from './navigation';
 import { LeaveDialog } from './components/LeaveDialog';
 import { LoginPage } from './pages/Login';
 import { EpisodesPage } from './pages/Episodes';
@@ -126,7 +126,7 @@ export function App() {
   }
   return (
     <>
-      {page}
+      <NavGuardContext.Provider value={navGuard}>{page}</NavGuardContext.Provider>
       <SignOutDialog flow={signOutFlow} />
       <ReauthDialog recovery={recovery} />
       <LeaveDialog guard={navGuard} />

@@ -6,6 +6,7 @@ import { SHOT_ANGLES, SHOT_MOVEMENTS, SHOT_SIZES, term } from '../../shared/voca
 import { assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
 import { useUnsavedDraft } from '../saves';
+import { useLocalGuard } from '../navigation';
 import { Icon, Ring, sceneColour } from '../components/Icon';
 import { ShotSizeIcon } from '../components/ShotIcons';
 import { useMediaQuery } from '../components/ui';
@@ -37,7 +38,9 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
   const scenes = episode.scenes;
   const index = Math.max(0, scenes.findIndex((s) => s.id === selectedId));
   const scene: Scene | undefined = scenes[index];
-  useUnsavedDraft(`A new shot typed for "${scene?.title ?? 'a scene'}"`, !!draft.trim(), { episodeId: episode.id, discard: () => setDraft('') });
+  // Bound to this scene: switching scenes asks first instead of moving the text to another scene.
+  useUnsavedDraft(`A new shot typed for "${scene?.title ?? 'a scene'}"`, !!draft.trim(), { episodeId: episode.id, zones: ['scene'], discard: () => setDraft('') });
+  const guard = useLocalGuard();
   const starts = sceneStarts(episode);
   const gear = episode.gear ?? [];
   const gearName = new Map(gear.map((g) => [g.id, g.name]));
@@ -173,7 +176,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
               role="tab"
               aria-selected={i === index}
               className={`${i === index ? 'on' : ''} ${gearMatches(s) === 0 ? 'no-match' : ''}`}
-              onClick={() => (setSelectedId(s.id), setEditing(null))}
+              onClick={() => guard('scene', () => (setSelectedId(s.id), setEditing(null)))}
             >
               <span className="scene-dot" style={{ background: sceneColour(i) }} />
               {sceneNumber(i)}
@@ -235,7 +238,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
                   type="button"
                   className={`scene-pane-item ${i === index ? 'on' : ''} ${matches === 0 ? 'no-match' : ''}`}
                   aria-current={i === index}
-                  onClick={() => (setSelectedId(s.id), setEditing(null))}
+                  onClick={() => guard('scene', () => (setSelectedId(s.id), setEditing(null)))}
                 >
                   <span className="scene-bar" style={{ background: sceneColour(i) }} />
                   <span className="scene-pane-text">

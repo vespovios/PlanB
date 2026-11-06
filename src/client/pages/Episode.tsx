@@ -4,6 +4,7 @@ import { formatTime, totalSeconds } from '../../shared/model';
 import type { User } from '../api';
 import { assetUrl } from '../api';
 import { useEpisodeSync } from '../sync';
+import { DraftZone } from '../saves';
 import { EPISODE_NAV, Shell } from '../components/Shell';
 import { Icon } from '../components/Icon';
 import { Segmented, TextField, Toast, useMediaQuery } from '../components/ui';
@@ -231,7 +232,8 @@ export function EpisodePage({ id, tab, user, onSignOut }: { id: string; tab: Epi
         </div>
       )}
       <Banners sync={sync} engine={engine} />
-      {content}
+      {/* Tab content unmounts on a tab change; the drawing editor below does not. */}
+      <DraftZone name="tab">{content}</DraftZone>
       {sketchScene && <StoryboardEditor scene={sketchScene} engine={engine} episodeId={episode.id} onClose={() => setSketchFor(null)} />}
       {historyOpen && <HistoryDialog episodeId={episode.id} engine={engine} onClose={() => setHistoryOpen(false)} onRestored={(message) => setToast({ message })} />}
       {toast && (

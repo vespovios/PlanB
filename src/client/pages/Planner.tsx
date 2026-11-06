@@ -7,6 +7,8 @@ import { Timeline } from '../planner/Timeline';
 import { Cards } from '../planner/Cards';
 import { SceneDetails } from '../planner/SceneDetails';
 import { ShotsPanel } from '../planner/Shots';
+import { DraftZone } from '../saves';
+import { useLocalGuard } from '../navigation';
 
 export type ToastState = { message: string; action?: { label: string; onClick: () => void } } | null;
 
@@ -24,6 +26,9 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
   const mobile = useMediaQuery('(max-width: 760px)');
   const [view, setView] = useState<'timeline' | 'cards'>(() => (localStorage.getItem('planb:view') as 'cards') || 'timeline');
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Another scene, or closing the scene sheet, unmounts the scene's typed input: ask first.
+  const guard = useLocalGuard();
+  const chooseScene = (sid: string) => guard('scene', () => setSelectedId(sid));
 
   useEffect(() => localStorage.setItem('planb:view', view), [view]);
   // The timeline can be folded away to give scene text and shots the full height.
@@ -36,10 +41,11 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
   const selIndex = scenes.findIndex((s) => s.id === selectedId);
   const selected: Scene | undefined = scenes[selIndex];
 
-  const select = (sid: string) => {
-    setSelectedId(sid);
-    if (mobile) setSheetOpen(true);
-  };
+  const select = (sid: string) =>
+    guard('scene', () => {
+      setSelectedId(sid);
+      if (mobile) setSheetOpen(true);
+    });
   const addScene = () => {
     const sid = randomId('sc');
     const index = selIndex >= 0 ? selIndex + 1 : scenes.length;
@@ -93,7 +99,7 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
           <>
             <section className="workspace">
               {selected ? (
-                <>
+                <DraftZone name="scene">
                   <div className="panel left">
                     <SceneDetails
                       key={selected.id}
@@ -110,7 +116,7 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
                   <div className="panel right">
                     <ShotsPanel scene={selected} engine={engine} gear={episode.gear ?? []} />
                   </div>
-                </>
+                </DraftZone>
               ) : (
                 <div className="panel empty-workspace">
                   <h3>Start with a scene</h3>
@@ -155,12 +161,12 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
                 <Timeline
                   scenes={scenes}
                   selectedId={selectedId}
-                  onSelect={setSelectedId}
+                  onSelect={chooseScene}
                   onResize={(sid, secs) => engine.queue({ op: 'updateScene', sceneId: sid, fields: { durationSeconds: secs } })}
                   onMove={moveScene}
                 />
               ) : (
-                <Cards scenes={scenes} selectedId={selectedId} onSelect={setSelectedId} onMove={moveScene} layout="grid" />
+                <Cards scenes={scenes} selectedId={selectedId} onSelect={chooseScene} onMove={moveScene} layout="grid" />
               )}
               <div className="sequence-foot">
                 <span className="muted">
@@ -190,12 +196,13 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
       {mobile && sheetOpen && selected && (
         <div className="sheet" role="dialog" aria-modal="true" aria-label={`Scene: ${selected.title}`}>
           <div className="sheet-head">
-            <button type="button" className="btn ghost" onClick={() => setSheetOpen(false)}>
+            <button type="button" className="btn ghost" onClick={() => guard('scene', () => setSheetOpen(false))}>
               ← Scenes
             </button>
             <SaveStatus sync={sync} />
           </div>
           <div className="sheet-body">
+            <DraftZone name="scene">
             <SceneDetails
               key={selected.id}
               scene={selected}
@@ -209,6 +216,7 @@ export function PlanTab({ episode, sync, selectedId, setSelectedId, setToast }: 
             />
             <hr />
             <ShotsPanel scene={selected} engine={engine} gear={episode.gear ?? []} />
+            </DraftZone>
           </div>
         </div>
       )}
