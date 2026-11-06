@@ -338,7 +338,7 @@ test('a drawing edited moments before: no false claim of a local copy; discard d
   await page.route('**/api/auth/logout', (route) => (fail ? route.abort('internetdisconnected') : route.continue()));
   await blocked.getByRole('button', { name: 'Sign out without saving…' }).click();
   const confirm = dialog(page, 'Sign out without saving?');
-  await expect(confirm).toContainText('deleted too');
+  await expect(confirm).toContainText('also deletes the copy');
   await confirm.getByRole('button', { name: 'Discard and sign out' }).click();
   const unconfirmed = dialog(page, 'Could not confirm sign-out');
   await expect(unconfirmed).toContainText('have not been discarded');
@@ -378,4 +378,68 @@ test('typed but unsubmitted input blocks sign-out; a closed skip-reason box does
   await clickSignOut(page);
   await expectSignedOut(page);
   expect(await probe()).toBe(401);
+});
+
+test('an upload still running past the save wait, then discarded, is never linked after sign-out', async ({ page, playwright }) => {
+  const { id } = await start(page, 'Sign-out late upload');
+  const probe = await sessionProbe(page, playwright);
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/episodes/*/assets', async (route) => {
+    const response = await route.fetch(); // the server stores the image while still signed in…
+    await held; // …but the answer arrives only after the sign-out
+    await route.fulfill({ response });
+  });
+  const writes: string[] = [];
+  page.on('request', (r) => r.url().includes('/changes') && writes.push(r.postData() ?? ''));
+  const uploaded = page.waitForRequest('**/api/episodes/*/assets');
+  await page.locator('.sb-toolbar input[type=file]').setInputFiles(await samplePngFile());
+  await uploaded;
+  await signOutBehindEditor(page);
+  // The bounded wait (10 s) ends with the upload still running: reported as unconfirmed, not as unsaved.
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
+  await expect(blocked).toContainText('still being saved', { timeout: 20_000 });
+  await expect(blocked).toContainText('Saves already sent may still complete');
+  await expect(blocked).not.toContainText('not saved on the server');
+  await blocked.getByRole('button', { name: 'Sign out without saving…' }).click();
+  const confirm = dialog(page, 'Sign out without saving?');
+  await expect(confirm).toContainText('cannot be recalled');
+  await confirm.getByRole('button', { name: 'Discard and sign out' }).click();
+  await expectSignedOut(page);
+  expect(await probe()).toBe(401);
+  const before = writes.length;
+  release();
+  await page.waitForTimeout(2000);
+  // The upload's answer arrived after the discard: no link request was made.
+  expect(writes.length).toBe(before);
+  expect(writes.some((w) => w.includes('addImage'))).toBe(false);
+  expect((await episode(page, id)).scenes[0].attachments).toHaveLength(0);
+});
+
+test('if the browser refuses to delete a discarded drawing’s copy, the confirmed sign-out says so', async ({ page, playwright }) => {
+  await start(page, 'Sign-out storage refused');
+  const probe = await sessionProbe(page, playwright);
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  const box = (await page.locator('.sb-canvas').boundingBox())!;
+  await page.mouse.move(box.x + 80, box.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 200, box.y + 160, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(() => draftKeys(page)).toHaveLength(1);
+  await page.evaluate(() => {
+    Storage.prototype.removeItem = () => {
+      throw new DOMException('Access denied', 'SecurityError');
+    };
+  });
+  await signOutBehindEditor(page);
+  await dialog(page, 'Some changes are not confirmed as saved').getByRole('button', { name: 'Sign out without saving…' }).click();
+  await expect(dialog(page, 'Sign out without saving?')).toContainText('tells you if it cannot');
+  await dialog(page, 'Sign out without saving?').getByRole('button', { name: 'Discard and sign out' }).click();
+  const done = dialog(page, 'Signed out');
+  await expect(done).toContainText('refused to delete its copy of: The drawing for');
+  expect(await probe()).toBe(401);
+  expect(await draftKeys(page)).toHaveLength(1);
+  await done.getByRole('button', { name: 'OK' }).click();
+  await expectSignedOut(page);
 });
