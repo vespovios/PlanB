@@ -143,6 +143,13 @@ export async function buildApp(config: Config, services = createServices(config)
 
   app.post('/api/auth/logout', async (req, reply) => {
     const token = req.cookies[SESSION_COOKIE];
+    // The cookie belongs to another account than the app asking (another tab switched it): leave
+    // that session and its cookie alone. Absent or expired sessions still sign out idempotently.
+    const expected = req.headers[USER_HEADER];
+    const owner = token && typeof expected === 'string' && expected ? auth.sessionUser(token) : null;
+    if (owner && owner.id !== expected) {
+      throw new HttpError(401, 'This browser is now signed in to a different account.', { code: 'session_user_changed' });
+    }
     if (token) auth.destroySession(token);
     reply.clearCookie(SESSION_COOKIE, sessionCookieOptions);
     return { ok: true };

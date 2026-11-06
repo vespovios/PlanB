@@ -65,6 +65,28 @@ describe('authentication', () => {
     expect(bobs.json().episodes.map((e: { title: string }) => e.title)).not.toContain('Must not be created for Bob');
   });
 
+  it('sign-out for one account never ends another account’s session in the shared cookie', async () => {
+    const aliceId = (await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: ctx.cookieA } })).json().user.id as string;
+    const bobCookie = await login(ctx.app, 'bob@example.com');
+    const bobId = (await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: bobCookie } })).json().user.id as string;
+    // Alice's app, Bob's cookie: refused; Bob stays signed in and his cookie is not cleared.
+    const mismatch = await ctx.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { ...asUser(bobCookie), 'x-planb-user': aliceId } });
+    expect(mismatch.statusCode).toBe(401);
+    expect(mismatch.json().code).toBe('session_user_changed');
+    expect(mismatch.headers['set-cookie']).toBeUndefined();
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: bobCookie } })).statusCode).toBe(200);
+    // Same account: signs out. Repeating it (session already gone) still succeeds.
+    const same = await ctx.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { ...asUser(bobCookie), 'x-planb-user': bobId } });
+    expect(same.statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: bobCookie } })).statusCode).toBe(401);
+    const again = await ctx.app.inject({ method: 'POST', url: '/api/auth/logout', headers: { ...asUser(bobCookie), 'x-planb-user': bobId } });
+    expect(again.statusCode).toBe(200);
+    // No header (older clients): unchanged behaviour.
+    const other = await login(ctx.app, 'bob@example.com');
+    expect((await ctx.app.inject({ method: 'POST', url: '/api/auth/logout', headers: asUser(other) })).statusCode).toBe(200);
+    expect((await ctx.app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: other } })).statusCode).toBe(401);
+  });
+
   it('agent tokens cannot manage tokens and revoked tokens stop working', async () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/tokens', headers: asAgent(ctx.tokenA) })).statusCode).toBe(403);
     const created = await ctx.app.inject({ method: 'POST', url: '/api/tokens', headers: asUser(ctx.cookieA), payload: { label: 'temp' } });
