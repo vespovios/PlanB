@@ -21,12 +21,23 @@ function participant() {
   } satisfies SaveParticipant;
 }
 
-function setup(login: (email: string, password: string) => Promise<{ user: User }>) {
+function setup(
+  login: (email: string, password: string) => Promise<{ user: User }>,
+  opts: { me?: () => Promise<{ user: User }>; timeoutMs?: number } = {},
+) {
   const c = new SaveCoordinator();
   const p = participant();
   c.register(p);
   const onDiscarded = vi.fn();
-  const r = new SessionRecovery({ login: vi.fn(login), onDiscarded, coordinator: c });
+  // By default the cookie belongs to whoever just signed in.
+  let last: User | null = null;
+  const tracked = async (email: string, password: string) => {
+    const r = await login(email, password);
+    last = r.user;
+    return r;
+  };
+  const me = opts.me ?? (async () => ({ user: last! }));
+  const r = new SessionRecovery({ login: vi.fn(tracked), me, onDiscarded, coordinator: c, timeoutMs: opts.timeoutMs });
   setSessionUser(alice.id);
   return { c, p, r, onDiscarded };
 }
@@ -66,12 +77,58 @@ describe('session recovery', () => {
     expect(sessionUserId()).toBe(alice.id);
   });
 
+  it('refuses to resume if the shared cookie belongs to another account by the time it is checked', async () => {
+    const { c, p, r } = setup(async () => ({ user: alice }), { me: async () => ({ user: bob }) });
+    r.lost(alice);
+    expect(await r.signIn('right')).toMatch(/That signed in as bob@example.com/);
+    expect(r.getSnapshot().step).toBe('lost');
+    expect(c.isSuspended).toBe(true);
+    expect(p.retryAfterReauth).not.toHaveBeenCalled();
+  });
+
+  it('a sign-in with no answer ends after the time limit, keeps everything paused, and its late answer is ignored', async () => {
+    let answer!: (v: { user: User }) => void;
+    let n = 0;
+    const { c, p, r } = setup(
+      (): Promise<{ user: User }> => (++n === 1 ? new Promise((res) => (answer = res)) : Promise.resolve({ user: alice })),
+      { timeoutMs: 50 },
+    );
+    r.lost(alice);
+    expect(await r.signIn('right')).toMatch(/No answer from PlanB/);
+    expect(r.getSnapshot().step).toBe('lost');
+    expect(c.isSuspended).toBe(true);
+    answer({ user: alice }); // the first attempt completes on the server after all
+    await new Promise((res) => setTimeout(res, 10));
+    expect(c.isSuspended).toBe(true);
+    expect(p.retryAfterReauth).not.toHaveBeenCalled();
+    // Try again: confirmed, resumes once.
+    expect(await r.signIn('right')).toBeNull();
+    expect(c.isFrozen).toBe(false);
+    expect(p.retryAfterReauth).toHaveBeenCalledOnce();
+  });
+
+  it('leaving while a sign-in is still waiting abandons it: its late success does not resume', async () => {
+    let answer!: (v: { user: User }) => void;
+    const { c, p, r } = setup(() => new Promise((res) => (answer = res)));
+    r.lost(alice);
+    const pending = r.signIn('right');
+    r.askDiscard();
+    answer({ user: alice });
+    expect(await pending).toBeNull();
+    expect(r.getSnapshot().step).toBe('confirm-discard');
+    expect(c.isSuspended).toBe(true);
+    expect(p.retryAfterReauth).not.toHaveBeenCalled();
+  });
+
   it('signs in with the original e-mail only', async () => {
-    const login = vi.fn(async () => ({ user: alice }));
-    const { r } = setup(login);
+    const seen: string[] = [];
+    const { r } = setup(async (email) => {
+      seen.push(email);
+      return { user: alice };
+    });
     r.lost(alice);
     await r.signIn('right');
-    expect(login).toHaveBeenCalledWith('alice@example.com', 'right');
+    expect(seen).toEqual(['alice@example.com']);
   });
 
   it('leaving discards this page’s work only after confirming, and forgets the account', async () => {

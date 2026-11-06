@@ -1,11 +1,12 @@
 // Recovering from a lost session (expired, revoked elsewhere, password changed, or the browser
-// switched to another account) without losing the work on this page, and without ever sending it
-// for, or showing it to, a different account.
+// switched to another account) without losing the work on this page, and without sending it for a
+// different account. The page is hidden (not unmounted) until the account is verified.
 import { useEffect, useRef } from 'react';
 import { api, setSessionUser, type User } from './api';
 import { saves as defaultCoordinator, type SaveCoordinator, type SaveReport } from './saves';
 
 export const REAUTHENTICATED = 'planb:reauthenticated';
+export const SIGN_IN_TIMEOUT_MS = 15_000;
 
 /** Runs `fn` after the same account signed in again (to redo a read refused while signed out). */
 export function useOnReauthenticated(fn: () => void) {
@@ -33,6 +34,8 @@ export class SessionRecovery {
   constructor(
     private deps: {
       login?: (email: string, password: string) => Promise<{ user: User }>;
+      me?: () => Promise<{ user: User }>;
+      timeoutMs?: number;
       /** Discarded and signed out locally; `notDeleted` lists local copies that could not be deleted. */
       onDiscarded: (notDeleted: string[]) => void;
       coordinator?: SaveCoordinator;
@@ -47,6 +50,9 @@ export class SessionRecovery {
   };
   getSnapshot = () => this.phase;
 
+  /** Bumped per sign-in attempt and when leaving, so a late answer to an abandoned attempt is ignored. */
+  private attempt = 0;
+
   private set(phase: RecoveryPhase) {
     this.phase = phase;
     this.listeners.forEach((fn) => fn());
@@ -60,26 +66,45 @@ export class SessionRecovery {
   };
 
   /**
-   * Signs in again as the same account (the e-mail is fixed). Only if the server confirms it is the
-   * same account do saves resume. Returns an error message, or null on success.
+   * Signs in again as the same account (the e-mail is fixed), waiting at most timeoutMs. Saves
+   * resume only once the server confirms that the browser's session now belongs to that account.
+   * Returns an error message, or null on success (or if this attempt was abandoned meanwhile).
    */
   signIn = async (password: string): Promise<string | null> => {
     const phase = this.phase;
     if (phase.step !== 'lost') return null;
-    let user: User;
+    const attempt = ++this.attempt;
+    const abandoned = () => attempt !== this.attempt || this.phase !== phase;
+    const bounded = <T>(p: Promise<T>) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      return Promise.race([
+        p,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new Error('No answer from PlanB. The sign-in may still complete on the server, but this page stays paused until one is confirmed. Try again, or leave without saving.')),
+            this.deps.timeoutMs ?? SIGN_IN_TIMEOUT_MS,
+          );
+        }),
+      ]).finally(() => clearTimeout(timer));
+    };
+    const differs = (u: User) => `That signed in as ${u.email}, not ${phase.user.email}. This page's edits were not sent.`;
     try {
-      ({ user } = await (this.deps.login ?? api.login)(phase.user.email, password));
+      const { user } = await bounded((this.deps.login ?? api.login)(phase.user.email, password));
+      if (abandoned()) return null;
+      // Never resume this page's work for another account. Requests still name the original
+      // account, so the server refuses them for any other session.
+      if (user.id !== phase.user.id) return differs(user);
+      // The cookie is shared by every tab and may have changed since: check whom it belongs to now.
+      const { user: now } = await bounded((this.deps.me ?? api.me)());
+      if (abandoned()) return null;
+      if (now.id !== phase.user.id) return differs(now);
     } catch (e) {
+      if (abandoned()) return null;
       return (e as Error).message;
     }
-    if (this.phase !== phase) return null;
-    if (user.id !== phase.user.id) {
-      // Never resume this page's work for another account. Requests still name the original
-      // account, so the server refuses them for this session.
-      return `That signed in as ${user.email}, not ${phase.user.email}. Nothing from this page was sent.`;
-    }
     // New session: late answers for the old one are now recognised as stale.
-    setSessionUser(user.id);
+    setSessionUser(phase.user.id);
     this.set({ step: 'active' });
     this.c.reauthenticated();
     // Pages with their own reads (episode list, settings) load again.
@@ -90,6 +115,7 @@ export class SessionRecovery {
   /** Leave without signing in again: shows what would be discarded. */
   askDiscard = () => {
     if (this.phase.step !== 'lost') return;
+    this.attempt++; // a sign-in still waiting for an answer no longer counts
     this.set({ step: 'confirm-discard', user: this.phase.user, switched: this.phase.switched, report: this.c.report() });
   };
 
