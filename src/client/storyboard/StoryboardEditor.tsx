@@ -169,13 +169,15 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   const releaseDraft = useUnsavedDraft(`The drawing for "${scene.title}"`, dirty || uploading, {
     episodeId,
     retained: dirty && copied === JSON.stringify(doc),
+    // Reports whether this browser's copy is confirmed gone (false if storage refused).
     discard: () => {
       discardedRef.current = true;
       setCopied(null);
       try {
         localStorage.removeItem(draftKey(episodeId, scene.id));
+        return localStorage.getItem(draftKey(episodeId, scene.id)) === null;
       } catch {
-        /* storage denied: there is no copy to remove */
+        return false;
       }
     },
   });

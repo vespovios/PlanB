@@ -70,7 +70,7 @@ export const DEFAULT_SETTLE_MS = 10_000;
 
 export class SaveCoordinator {
   private participants = new Set<SaveParticipant>();
-  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; discard?: () => void }>();
+  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; discard?: () => boolean | void }>();
   private frozen = false;
 
   /** Engines register while mounted and stay registered after unmount until their work is resolved. */
@@ -87,9 +87,10 @@ export class SaveCoordinator {
   /**
    * Records that an editor holds input that is not saved (e.g. an open drawing). Returns the
    * release function. `retained` means a copy is also kept in this browser (localStorage).
-   * `discard` clears the input (and any local copy) when the user explicitly discards it.
+   * `discard` clears the input (and any local copy) when the user explicitly discards it; it
+   * returns false if a local copy could not be deleted.
    */
-  addDraft(label: string, opts: { episodeId?: string; retained?: boolean; discard?: () => void } = {}): () => void {
+  addDraft(label: string, opts: { episodeId?: string; retained?: boolean; discard?: () => boolean | void } = {}): () => void {
     const key = Symbol(label);
     this.drafts.set(key, { label, episodeId: opts.episodeId, retained: !!opts.retained, discard: opts.discard });
     return () => this.drafts.delete(key);
@@ -149,19 +150,24 @@ export class SaveCoordinator {
   /**
    * Explicit discard (only after the user confirmed it): drops every unsaved edit, conflict, report
    * and draft, including drafts' local copies. Requests already sent are not recalled.
+   * Returns the drafts whose copy in this browser could not be confirmed deleted.
    */
-  discardAll() {
+  discardAll(): string[] {
     [...this.participants].forEach((p) => p.discard());
     this.participants.clear();
     const drafts = [...this.drafts.values()];
     this.drafts.clear();
+    const notDeleted: string[] = [];
     for (const d of drafts) {
+      let ok: boolean | void = false;
       try {
-        d.discard?.();
+        ok = d.discard?.();
       } catch {
-        /* the input is gone with the page anyway */
+        ok = false;
       }
+      if (ok === false) notDeleted.push(d.label);
     }
+    return notDeleted;
   }
 
   /**
@@ -197,7 +203,7 @@ export function storeLocalCopy(key: string, value: string, storage?: Pick<Storag
  * Registers an editor's unsaved input with the coordinator while `active` is true. `discard` is
  * called only if the user explicitly discards unsaved work (e.g. "Discard and sign out").
  */
-export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean; discard?: () => void } = {}) {
+export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean; discard?: () => boolean | void } = {}) {
   const discard = useRef(opts.discard);
   discard.current = opts.discard;
   const release = useRef<(() => void) | null>(null);

@@ -12,7 +12,9 @@ export type SignOutPhase =
   | { step: 'confirm'; report: SaveReport }
   | { step: 'signing-out'; discard: boolean }
   /** The sign-out request got no clear answer: the session may or may not have ended. */
-  | { step: 'unconfirmed'; discard: boolean; message: string };
+  | { step: 'unconfirmed'; discard: boolean; message: string }
+  /** Signed out (confirmed by the server), but a local copy of discarded work could not be deleted. */
+  | { step: 'signed-out'; notDeleted: string[] };
 
 export const LOGOUT_TIMEOUT_MS = 15_000;
 
@@ -62,6 +64,7 @@ export class SignOutFlow {
 
   /** Back to the page with everything as it was. */
   stay = () => {
+    if (this.phase.step === 'signed-out') return this.set({ step: 'idle' });
     if (this.phase.step === 'idle' || this.phase.step === 'saving' || this.phase.step === 'signing-out') return;
     this.end();
   };
@@ -100,7 +103,7 @@ export class SignOutFlow {
 
   /** The app signed out for another reason (e.g. the session expired): abandon this run. */
   reset = () => {
-    if (this.phase.step !== 'idle') this.end();
+    if (this.phase.step !== 'idle' && this.phase.step !== 'signed-out') this.end();
   };
 
   private end() {
@@ -141,8 +144,9 @@ export class SignOutFlow {
       clearTimeout(timer);
     }
     if (run !== this.run) return;
-    if (discard) this.c.discardAll();
+    const notDeleted = discard ? this.c.discardAll() : [];
     this.end();
     this.deps.onSignedOut();
+    if (notDeleted.length) this.set({ step: 'signed-out', notDeleted });
   }
 }

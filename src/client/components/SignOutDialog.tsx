@@ -110,12 +110,30 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
           {has('inflight', 'direct') && <p className="small">Changes already sent cannot be recalled: the server may still save them.</p>}
           {has('rejected', 'uncertain') && <p className="small">Messages about changes that were not saved, or may not have been, are dismissed.</p>}
           {issues.some((i) => i.kind === 'draft' && /kept in this browser/.test(i.message)) && (
-            <p className="small">The copy of an unsaved drawing kept in this browser is deleted too.</p>
+            <p className="small">PlanB also deletes the copy of an unsaved drawing kept in this browser, and tells you if it cannot.</p>
           )}
         </Modal>
       );
       break;
     }
+    case 'signed-out':
+      dialog = (
+        <Modal
+          title="Signed out"
+          onClose={flow.stay}
+          footer={
+            <button type="button" className="btn primary" onClick={flow.stay} autoFocus>
+              OK
+            </button>
+          }
+        >
+          <p role="alert">
+            You are signed out. This browser refused to delete its copy of: {phase.notDeleted.join('; ')}. Anyone using this browser profile may be able to
+            restore it; clear this site’s data in the browser settings to remove it.
+          </p>
+        </Modal>
+      );
+      break;
     case 'unconfirmed':
       dialog = (
         <Modal

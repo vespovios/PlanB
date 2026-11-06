@@ -33,7 +33,14 @@ export function App() {
   }, []);
 
   if (user === undefined) return <div className="boot">Loading PlanB…</div>;
-  if (user === null) return <LoginPage onLogin={setUser} offline={offline} />;
+  if (user === null)
+    return (
+      <>
+        <LoginPage onLogin={setUser} offline={offline} />
+        {/* Signed out, but something to report about the discarded work (e.g. a local copy left behind). */}
+        <SignOutDialog flow={signOutFlow} />
+      </>
+    );
 
   const signOut = () => void signOutFlow.start();
 

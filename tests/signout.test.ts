@@ -127,6 +127,27 @@ describe('sign-out flow', () => {
     expect(c.report().outcome).toBe('confirmed');
   });
 
+  it('a local copy that could not be deleted is reported after the confirmed sign-out, not as a failed sign-out', async () => {
+    const { c, flow, onSignedOut, logout } = setup();
+    c.register(participant([issue('conflict')]));
+    c.addDraft('The drawing for "Opening"', { retained: true, discard: () => false });
+    c.addDraft('A link being added', {
+      discard: () => {
+        throw new Error('storage denied');
+      },
+    });
+    c.addDraft('A new shot typed', { discard: () => undefined });
+    await flow.start();
+    flow.askDiscard();
+    await flow.confirmDiscard();
+    expect(logout).toHaveBeenCalledOnce();
+    expect(onSignedOut).toHaveBeenCalledOnce();
+    expect(flow.getSnapshot()).toEqual({ step: 'signed-out', notDeleted: ['The drawing for "Opening"', 'A link being added'] });
+    expect(c.isFrozen).toBe(false);
+    flow.stay();
+    expect(flow.getSnapshot()).toEqual({ step: 'idle' });
+  });
+
   it('Back from the confirmation thaws and keeps everything', async () => {
     const { c, flow } = setup();
     const p = participant([issue('offline')]);
