@@ -434,7 +434,7 @@ export class EpisodeSync implements SaveParticipant {
         if (err.status === 401) {
           this.failure = 'auth';
           this.state = 'error';
-          this.error = 'You were signed out. Your edits are kept here and are saved once you sign in again.';
+          this.error = 'You were signed out. Your edits are kept here and are retried after you sign in again.';
         } else if (err.status >= 500) {
           // A server error is not retried automatically; the edits stay here until Retry.
           this.failure = 'server';

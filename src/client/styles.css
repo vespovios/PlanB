@@ -1531,6 +1531,10 @@ select:focus,
 .confirm-message p {
   margin-top: 0;
 }
+/* While a lost session is unverified the page stays mounted but is not shown. */
+#root.concealed {
+  visibility: hidden;
+}
 /* The sign-out dialog is rendered outside the app (which is inert meanwhile), above everything. */
 body > .modal-backdrop {
   z-index: 100;

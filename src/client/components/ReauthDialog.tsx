@@ -1,6 +1,6 @@
-// Shown when the server no longer accepts this page's session. The page stays as it was (paused)
-// behind it; only the same account can resume it.
-import { useState, useSyncExternalStore } from 'react';
+// Shown when the server no longer accepts this page's session. The page stays mounted as it was
+// (paused, and hidden until the account is verified); only the same account can resume it.
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import type { SessionRecovery } from '../session';
 import { Modal } from './ui';
@@ -13,7 +13,15 @@ export function ReauthDialog({ recovery }: { recovery: SessionRecovery }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useInertApp(phase.step !== 'active');
+  const paused = phase.step !== 'active';
+  useInertApp(paused);
+  // Hidden, not unmounted: whoever is at the screen has not shown they are this account.
+  useEffect(() => {
+    const root = document.getElementById('root');
+    if (!paused || !root) return;
+    root.classList.add('concealed');
+    return () => root.classList.remove('concealed');
+  }, [paused]);
   if (phase.step === 'active') return null;
   const who = phase.user.name ? `${phase.user.name} (${phase.user.email})` : phase.user.email;
 
@@ -24,7 +32,7 @@ export function ReauthDialog({ recovery }: { recovery: SessionRecovery }) {
         onClose={noop}
         footer={
           <>
-            <button type="button" className="btn danger" onClick={recovery.askDiscard} disabled={busy}>
+            <button type="button" className="btn danger" onClick={recovery.askDiscard}>
               Leave without saving…
             </button>
             <button type="submit" form="reauth-form" className="btn primary" disabled={busy || !password}>
@@ -37,7 +45,8 @@ export function ReauthDialog({ recovery }: { recovery: SessionRecovery }) {
           {phase.switched
             ? 'This browser is now signed in to a different account (perhaps in another tab).'
             : 'PlanB no longer accepts this sign-in (it expired, was signed out elsewhere, or the password changed).'}{' '}
-          Your work on this page is kept, but nothing is saved until you sign in again as {who}.
+          New saves are paused. This page’s work is kept, hidden, until you sign in again as {who}; then unsaved edits are retried (some may meet newer
+          changes and ask you to choose). Requests sent before this may still finish.
         </p>
         <form
           id="reauth-form"
@@ -74,7 +83,7 @@ export function ReauthDialog({ recovery }: { recovery: SessionRecovery }) {
             </p>
           )}
         </form>
-        <p className="muted small">To use a different account, leave without saving first: this page’s work is never shown to or saved for another account.</p>
+        <p className="muted small">To use a different account, leave without saving first. This page’s edits are not sent for another account.</p>
       </Modal>
     ) : (
       <Modal
