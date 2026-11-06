@@ -218,6 +218,9 @@ describe('freezing writes', () => {
     await expect(e.commitNow([title('direct')])).rejects.toMatchObject({ status: 423, body: { code: 'writes_frozen' } });
     saves.thaw();
     await vi.waitFor(() => expect(current.title).toBe('held'));
+    // The refused direct save is reported as not saved until acknowledged.
+    expect(kinds()).toEqual(['rejected:rejected:1']);
+    saves.acknowledge();
     expect(saves.report().outcome).toBe('confirmed');
   });
 });
@@ -246,24 +249,145 @@ describe('ownership after unmount', () => {
   });
 });
 
+describe('freezing at dispatch time', () => {
+  it('a flush requested before the freeze sends nothing after it', async () => {
+    const e = await started();
+    let calls = 0;
+    server.changes = async (id, base, ops) => {
+      calls++;
+      return apply(id, base, ops);
+    };
+    e.queue(title('x'), 10_000);
+    const p = e.flush();
+    saves.freeze();
+    await p;
+    await tick();
+    expect(calls).toBe(0);
+    expect(kinds()).toEqual(['blocked:held:1']);
+  });
+
+  it('direct saves and restores waiting behind a request are not sent after the freeze', async () => {
+    const e = await started();
+    const gate = deferred<void>();
+    let changes = 0;
+    let restores = 0;
+    server.changes = async (id, base, ops) => {
+      changes++;
+      await gate.promise;
+      return apply(id, base, ops);
+    };
+    server.restore = async () => {
+      restores++;
+      return { episode: current };
+    };
+    e.queue(title('first'));
+    await vi.waitFor(() => expect(changes).toBe(1));
+    const direct = e.commitNow([{ op: 'updateEpisode', fields: { brief: 'direct' } }], 'Direct save');
+    const restoring = e.restore(1, 1);
+    saves.freeze();
+    gate.resolve();
+    await expect(direct).rejects.toMatchObject({ status: 423, body: { code: 'writes_frozen' } });
+    await expect(restoring).rejects.toMatchObject({ status: 423 });
+    expect([changes, restores]).toEqual([1, 0]);
+    expect(current.title).toBe('first');
+    expect(current.brief).not.toBe('direct');
+    // Neither is reported as saved.
+    expect(kinds()).toEqual(['rejected:rejected:1', 'rejected:rejected:1']);
+  });
+
+  it('an upload finishing after the freeze is not linked, and is reported once as not saved', async () => {
+    const e = await started();
+    let changes = 0;
+    server.changes = async (id, base, ops) => {
+      changes++;
+      return apply(id, base, ops);
+    };
+    const upload = deferred<void>();
+    const run = e.track('Adding image "a.jpg"', async () => {
+      await upload.promise;
+      await e.commitNow([title('linked')], 'Added image reference', { nested: true });
+    });
+    saves.freeze();
+    upload.resolve();
+    await expect(run).rejects.toMatchObject({ status: 423 });
+    expect(changes).toBe(0);
+    expect(kinds()).toEqual(['rejected:rejected:1']);
+  });
+
+  it('settle still waits for a request sent before the freeze', async () => {
+    const e = await started();
+    const gate = deferred<void>();
+    server.changes = async (id, base, ops) => {
+      await gate.promise;
+      return apply(id, base, ops);
+    };
+    e.queue(title('sent'));
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('saving'));
+    saves.freeze();
+    setTimeout(() => gate.resolve(), 50);
+    expect(await saves.settle(2000)).toEqual({ outcome: 'confirmed', issues: [] });
+    expect(current.title).toBe('sent');
+  });
+});
+
 describe('direct saves', () => {
-  it('waits for a running upload-and-link, and marks an unanswered commit as uncertain', async () => {
+  const offline = async () => {
+    throw new ApiError(0, 'Connection lost');
+  };
+
+  it('counts upload-and-link as one running save, and an unanswered link as uncertain once', async () => {
     const e = await started();
     const upload = deferred<void>();
-    const run = e.track(async () => {
-      await upload.promise;
-      await e.commitNow([title('linked')], 'Added image');
-    });
-    expect(kinds()).toEqual(['uncertain:direct:1']);
+    const commit = deferred<void>();
     server.changes = async () => {
+      await commit.promise;
       throw new ApiError(0, 'Connection lost');
     };
+    const run = e.track('Adding image "a.jpg"', async () => {
+      await upload.promise;
+      await e.commitNow([title('linked')], 'Added image reference', { nested: true });
+    });
+    expect(kinds()).toEqual(['uncertain:direct:1']);
     upload.resolve();
+    await tick();
+    expect(kinds()).toEqual(['uncertain:direct:1']);
+    commit.resolve();
     await expect(run).rejects.toMatchObject({ status: 0 });
     expect(kinds()).toEqual(['uncertain:uncertain:1']);
-    expect(saves.report().issues[0].message).toMatch(/Added image/);
-    e.acknowledgeDropped();
+    expect(saves.report().issues[0].message).toMatch(/Added image reference.*may or may not/);
+    saves.acknowledge();
     expect(saves.report().outcome).toBe('confirmed');
+  });
+
+  it('an upload that fails before linking is reported as not saved, never confirmed', async () => {
+    const e = await started();
+    const run = e.track('Adding image "a.jpg"', async () => {
+      await offline();
+    });
+    await expect(run).rejects.toMatchObject({ status: 0 });
+    expect(saves.report().outcome).toBe('rejected');
+    expect(saves.report().issues[0].message).toMatch(/Adding image "a.jpg" was not saved/);
+  });
+
+  it('a direct save refused (400) or signed out (401) is reported, unless an editor still holds it', async () => {
+    const e = await started();
+    server.changes = async () => {
+      throw new ApiError(400, 'Too long');
+    };
+    await expect(e.commitNow([title('x')], 'Remove image')).rejects.toMatchObject({ status: 400 });
+    server.changes = async () => {
+      throw new ApiError(401, 'Sign in');
+    };
+    await expect(e.commitNow([title('x')], 'Added link')).rejects.toMatchObject({ status: 401 });
+    expect(kinds()).toEqual(['rejected:rejected:1', 'rejected:rejected:1']);
+    saves.acknowledge();
+    // An open drawing keeps its content, so its own failure is not counted again (its draft is).
+    await expect(e.commitNow([title('x')], 'Saved storyboard', { kept: true })).rejects.toMatchObject({ status: 401 });
+    expect(saves.report().outcome).toBe('confirmed');
+    // ...but an unanswered one may have been saved, so it is still uncertain.
+    server.changes = offline;
+    await expect(e.commitNow([title('x')], 'Saved storyboard', { kept: true })).rejects.toMatchObject({ status: 0 });
+    expect(kinds()).toEqual(['uncertain:uncertain:1']);
   });
 
   it('a restore replays edits made meanwhile instead of discarding them', async () => {
@@ -278,6 +402,49 @@ describe('direct saves', () => {
     expect(e.getSnapshot().episode?.title).toBe('typed during restore');
     await saves.settle(1000);
     expect([current.title, current.brief]).toEqual(['typed during restore', 'restored']);
+  });
+
+  it('an unanswered restore is uncertain', async () => {
+    const e = await started();
+    server.restore = offline;
+    await expect(e.restore(1, 1)).rejects.toMatchObject({ status: 0 });
+    expect(kinds()).toEqual(['uncertain:uncertain:1']);
+  });
+});
+
+describe('errors that are not answers from the server', () => {
+  it('keeps the batch for Retry and marks it as possibly applied, never as rejected', async () => {
+    const e = await started();
+    server.changes = async (id, base, ops) => {
+      await apply(id, base, ops);
+      throw new TypeError('Failed to read the response');
+    };
+    e.queue({ op: 'addScene', id: 'sc_newscene2', index: 1, scene: { title: 'New', durationSeconds: 10 } } as Operation);
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('error'));
+    expect(kinds()).toEqual(['blocked:server:1']);
+    expect(e.getSnapshot().episode?.scenes.some((s) => s.id === 'sc_newscene2')).toBe(true);
+    server.changes = apply;
+    e.retry();
+    await saves.settle(2000);
+    expect(current.scenes.filter((s) => s.id === 'sc_newscene2')).toHaveLength(1);
+    expect(kinds()).toEqual(['uncertain:uncertain:1']);
+  });
+
+  it('reports uncertain, not confirmed, if a participant cannot be checked', () => {
+    const broken = {
+      settle: async () => undefined,
+      resume: () => undefined,
+      acknowledgeDropped: () => undefined,
+      issues: (): never => {
+        throw new Error('boom');
+      },
+    };
+    saves.register(broken);
+    try {
+      expect(saves.report()).toMatchObject({ outcome: 'uncertain', issues: [{ kind: 'unknown' }] });
+    } finally {
+      saves.unregister(broken);
+    }
   });
 });
 

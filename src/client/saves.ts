@@ -5,9 +5,10 @@ import { useEffect } from 'react';
 
 /**
  * confirmed: nothing outstanding. blocked: work is kept on this page but cannot be saved without
- * the user (conflict, refusal by the server, offline, signed out, open drawing). rejected: the
- * server refused edits and they were dropped. uncertain: a request was sent but no answer came
- * back, so it may or may not have been saved; a timeout never proves the server did not apply it.
+ * the user (conflict, server error, offline, signed out, frozen, unsaved input in an editor).
+ * rejected: definitely not saved and no longer kept here (refused by the server, or a direct save
+ * such as an upload that failed). uncertain: a request was sent but no answer came back, so it
+ * may or may not have been saved; a timeout never proves the server did not apply it.
  */
 export type SaveOutcome = 'confirmed' | 'blocked' | 'rejected' | 'uncertain';
 
@@ -22,7 +23,8 @@ export type SaveIssueKind =
   | 'inflight' // sent, no answer yet
   | 'direct' // a drawing, upload, link or restore still running
   | 'rejected'
-  | 'uncertain';
+  | 'uncertain'
+  | 'unknown'; // the state of some work could not be read
 
 export interface SaveIssue {
   outcome: Exclude<SaveOutcome, 'confirmed'>;
@@ -46,6 +48,8 @@ export interface SaveParticipant {
   issues(): SaveIssue[];
   /** Called when writes are thawed so held edits are sent. */
   resume(): void;
+  /** The user has seen the rejected and uncertain items; stop reporting them. */
+  acknowledgeDropped(): void;
 }
 
 const rank: Record<SaveOutcome, number> = { confirmed: 0, rejected: 1, uncertain: 2, blocked: 3 };
@@ -105,7 +109,14 @@ export class SaveCoordinator {
   /** The current state of all outstanding work, without sending anything. */
   report(): SaveReport {
     const issues: SaveIssue[] = [];
-    this.participants.forEach((p) => issues.push(...p.issues()));
+    this.participants.forEach((p) => {
+      try {
+        issues.push(...p.issues());
+      } catch (e) {
+        // Never report "confirmed" because the check itself failed.
+        issues.push({ outcome: 'uncertain', kind: 'unknown', count: 1, message: `Could not check for unsaved work: ${(e as Error)?.message ?? e}` });
+      }
+    });
     this.drafts.forEach((d) =>
       issues.push({
         outcome: 'blocked',
@@ -116,6 +127,11 @@ export class SaveCoordinator {
       }),
     );
     return summarise(issues);
+  }
+
+  /** The user has seen every rejected and uncertain item (e.g. in a sign-out dialog). */
+  acknowledge() {
+    this.participants.forEach((p) => p.acknowledgeDropped());
   }
 
   /**

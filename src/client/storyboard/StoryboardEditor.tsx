@@ -392,7 +392,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
     if (file.size > 10 * 1024 * 1024) return setError('Images can be at most 10 MiB.');
     setUploading(true);
     try {
-      const id = await engine.track(async () => {
+      const id = await engine.track(`Adding background image "${file.name}"`, async () => {
         const { asset } = await api.upload(episodeId, file, file.name);
         const id = randomId('at');
         engine.rememberAsset(asset.id, asset);
@@ -400,6 +400,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
         await engine.commitNow(
           [{ op: 'addImage', sceneId: scene.id, id, assetId: asset.id, label: file.name.replace(/\.[^.]+$/, '').slice(0, 80) }],
           `Added image reference to "${scene.title}"`,
+          { nested: true },
         );
         return id;
       });
@@ -423,7 +424,8 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
       description: doc.description.trim(),
       objects: doc.objects.map(round),
     };
-    const attempt = () => engine.commitNow([{ op: 'saveStoryboard', sceneId: scene.id, storyboard }], `Saved storyboard for "${scene.title}"`);
+    // The editor keeps the drawing if this fails, so the failure is not recorded as lost.
+    const attempt = () => engine.commitNow([{ op: 'saveStoryboard', sceneId: scene.id, storyboard }], `Saved storyboard for "${scene.title}"`, { kept: true });
     try {
       const current = engine.confirmed?.scenes.find((s) => s.id === scene.id)?.storyboard?.savedRevision ?? null;
       if (!force && current !== startRevision) {

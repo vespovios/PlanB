@@ -136,6 +136,8 @@ export class EpisodeSync implements SaveParticipant {
   private dropped: Dropped[] = [];
   /** Direct saves (commitNow, uploads, restores) still running. */
   private active = new Set<Promise<unknown>>();
+  /** Direct-save errors already recorded (or deliberately not), so an enclosing track() does not count them twice. */
+  private handled = new WeakSet<object>();
 
   constructor(public readonly id: string) {
     this.snap = this.makeSnapshot();
@@ -358,7 +360,9 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   private async flushInner(): Promise<void> {
-    if (!this.server || !this.queued.length) return;
+    // Checked when the send is about to happen, not only when it was requested: a flush waiting
+    // behind another request must not go out after writes were frozen. The edits stay queued.
+    if (!this.server || !this.queued.length || saves.isFrozen) return;
     clearTimeout(this.retryTimer);
     this.sending = true;
     this.inflight = this.queued;
@@ -389,7 +393,15 @@ export class EpisodeSync implements SaveParticipant {
       const err = e as ApiError;
       const failed = this.inflight;
       this.inflight = [];
-      if (err.status === 409 && err.body.code === 'stale_revision') {
+      if (!(e instanceof ApiError)) {
+        // Not an answer from the server (e.g. the response could not be read): the batch may have
+        // been applied. Keep it for Retry; a replay is checked against the revision as usual.
+        for (const p of failed) p.unconfirmed = true;
+        this.queued = [...failed, ...this.queued];
+        this.failure = 'server';
+        this.state = 'error';
+        this.error = `Could not confirm this save (${(e as Error)?.message ?? e}). Your edits are kept on this page; press Retry.`;
+      } else if (err.status === 409 && err.body.code === 'stale_revision') {
         this.queued = [...failed, ...this.queued];
         try {
           const { episode } = await api.episode(this.id);
@@ -555,11 +567,15 @@ export class EpisodeSync implements SaveParticipant {
   /**
    * Saves a batch immediately and waits for the server (used for drawings, uploads and
    * restores, where the result must be confirmed before the UI moves on). Throws ApiError.
+   * `kept`: the caller still holds the change (an open editor), so a definite failure is not
+   * recorded as lost. `nested`: called inside track(), which counts the save as running.
    */
-  commitNow(operations: Operation[], summary?: string) {
-    return this.track(() => {
+  commitNow(operations: Operation[], summary?: string, opts: { kept?: boolean; nested?: boolean } = {}) {
+    const label = summary ?? 'A change';
+    return this.direct(label, { kept: opts.kept, writes: true, count: !opts.nested }, () => {
       clearTimeout(this.timer);
       return this.exclusive(async () => {
+        if (saves.isFrozen) throw frozenError();
         await this.flushInner();
         if (this.queued.length || this.conflicted.length) {
           throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
@@ -573,7 +589,6 @@ export class EpisodeSync implements SaveParticipant {
           return res;
         } catch (e) {
           const err = e as ApiError;
-          if (ambiguous(err)) this.recordDirect(summary ?? 'A change', operations.length);
           if (err.status === 409) {
             try {
               this.rebase((await api.episode(this.id)).episode);
@@ -589,38 +604,56 @@ export class EpisodeSync implements SaveParticipant {
 
   /** Restores a revision (History), in turn with other saves. Throws ApiError. */
   restore(targetRevision: number, baseRevision: number, acknowledgeLaterRevisions = false) {
-    return this.track(() =>
+    return this.direct(`Restoring revision ${targetRevision}`, { writes: true }, () =>
       this.exclusive(async () => {
-        try {
-          const { episode } = await api.restore(this.id, targetRevision, baseRevision, acknowledgeLaterRevisions);
-          this.adopt(episode);
-          return episode;
-        } catch (e) {
-          if (ambiguous(e)) this.recordDirect(`Restoring revision ${targetRevision}`, 1);
-          throw e;
-        }
+        if (saves.isFrozen) throw frozenError();
+        const { episode } = await api.restore(this.id, targetRevision, baseRevision, acknowledgeLaterRevisions);
+        this.adopt(episode);
+        return episode;
       }),
     );
   }
 
   /**
-   * Runs a save made outside the queue (e.g. upload then link) so the coordinator can wait for it.
-   * Refused while writes are frozen.
+   * Runs a save made outside the queue (e.g. upload then link) so the coordinator can wait for it
+   * and knows if it fails. Pass `nested: true` to commitNow calls inside it. Refused while frozen.
    */
-  async track<T>(fn: () => Promise<T>): Promise<T> {
-    if (saves.isFrozen) throw frozenError();
-    const run = fn();
-    this.active.add(run);
+  track<T>(label: string, fn: () => Promise<T>, opts: { kept?: boolean } = {}): Promise<T> {
+    return this.direct(label, { kept: opts.kept }, fn);
+  }
+
+  private async direct<T>(label: string, o: { kept?: boolean; writes?: boolean; count?: boolean }, fn: () => Promise<T>): Promise<T> {
+    const run = (async () => {
+      if (saves.isFrozen) throw frozenError();
+      return fn();
+    })();
+    if (o.count !== false) this.active.add(run);
     try {
       return await run;
+    } catch (e) {
+      this.recordFailure(e, label, o);
+      throw e;
     } finally {
       this.active.delete(run);
       this.releaseIfDone();
     }
   }
 
-  private recordDirect(label: string, count: number) {
-    this.dropped.push({ outcome: 'uncertain', source: 'direct', count, message: `${label}: no answer from the server, so it may or may not have been saved.` });
+  /**
+   * A direct save failed. If it may have reached the server it is uncertain; otherwise it was not
+   * saved, which matters unless the caller still holds the change (an open editor keeps it).
+   */
+  private recordFailure(e: unknown, label: string, o: { kept?: boolean; writes?: boolean }) {
+    if (e && typeof e === 'object') {
+      if (this.handled.has(e)) return;
+      this.handled.add(e);
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    if (o.writes && ambiguous(e)) {
+      this.dropped.push({ outcome: 'uncertain', source: 'direct', count: 1, message: `${label}: no answer from the server, so it may or may not have been saved.` });
+    } else if (!o.kept) {
+      this.dropped.push({ outcome: 'rejected', source: 'direct', count: 1, message: `${label} was not saved: ${message}` });
+    } else return;
     this.emit();
   }
 
@@ -657,7 +690,8 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   /**
-   * Sends what can be sent and waits for answers until nothing is moving or the deadline passes.
+   * Sends what can be sent (nothing while frozen) and waits for answers until nothing is moving or
+   * the deadline passes.
    * Saves held for Retry (signed out, server error) and conflicts are left for the user; offline
    * edits get one more attempt. Requests still running at the deadline are not cancelled.
    */
@@ -668,8 +702,9 @@ export class EpisodeSync implements SaveParticipant {
       return Promise.race([p, timeout]).finally(() => clearTimeout(t));
     };
     let triedOffline = false;
-    while (Date.now() < deadline && !saves.isFrozen) {
-      const sendable = this.server && this.queued.length && this.state !== 'error' && !(this.state === 'offline' && triedOffline);
+    while (Date.now() < deadline) {
+      // While frozen nothing new is sent, but requests already sent are still waited for.
+      const sendable = !saves.isFrozen && this.server && this.queued.length && this.state !== 'error' && !(this.state === 'offline' && triedOffline);
       if (sendable) {
         await until(this.flush());
         if (this.state === 'offline') triedOffline = true;

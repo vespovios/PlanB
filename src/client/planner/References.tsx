@@ -20,7 +20,7 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
     if (file.size > LIMITS.imageBytes) return setError(`That image is ${(file.size / 1024 / 1024).toFixed(1)} MiB; the limit is 10 MiB.`);
     setBusy(true);
     try {
-      await engine.track(async () => {
+      await engine.track(`Adding image "${file.name}"`, async () => {
         const { asset } = await api.upload(episodeId, file, file.name);
         engine.rememberAsset(asset.id, asset);
         const label = file.name.replace(/\.[^.]+$/, '').slice(0, 80);
@@ -32,6 +32,7 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
             ...(scene.thumbnailAttachmentId ? [] : [{ op: 'updateScene' as const, sceneId: scene.id, fields: { thumbnailAttachmentId: attachmentId } }]),
           ],
           `Added image reference to "${scene.title}"`,
+          { nested: true },
         );
       });
     } catch (e) {
@@ -82,7 +83,7 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
             e.preventDefault();
             setError(null);
             try {
-              await engine.commitNow([{ op: 'addLink', sceneId: scene.id, id: linkForm.id, label: linkForm.label.trim(), url: linkForm.url.trim() }]);
+              await engine.commitNow([{ op: 'addLink', sceneId: scene.id, id: linkForm.id, label: linkForm.label.trim(), url: linkForm.url.trim() }], `Added link to "${scene.title}"`);
               setLinkForm(null);
             } catch (err) {
               setError((err as Error).message.replace(/^Operation \d+ \(\w+\): /, ''));

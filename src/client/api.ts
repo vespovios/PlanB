@@ -29,12 +29,21 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   } catch {
     throw new ApiError(0, 'Cannot reach the PlanB server. Check your connection.');
   }
-  const text = await res.text();
+  // A body that cannot be read, or a success that is not JSON, is not an answer: the request may
+  // have been applied, so it is reported like a lost connection (status 0).
+  const lost = () => new ApiError(0, 'The connection dropped before PlanB answered. Check your connection.');
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    throw lost();
+  }
   let data: Record<string, unknown> = {};
   try {
     data = text ? JSON.parse(text) : {};
   } catch {
     /* non-JSON error page from a proxy */
+    if (res.ok) throw lost();
   }
   if (!res.ok) {
     if (res.status === 401 && !url.endsWith('/login')) window.dispatchEvent(new Event('planb:signed-out'));
