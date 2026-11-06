@@ -50,7 +50,7 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
     case 'signing-out':
       dialog = (
         <Modal title="Signing out" onClose={noop}>
-          <p role="status">{phase.step === 'saving' ? 'Saving your changes first…' : 'Signing out…'}</p>
+          <p role="status">{phase.step === 'saving' ? 'Sending unsaved changes first…' : 'Signing out…'}</p>
         </Modal>
       );
       break;
@@ -58,7 +58,7 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
       const kinds = phase.report.issues.map((i) => i.kind);
       dialog = (
         <Modal
-          title="Not everything is saved"
+          title="Some changes are not confirmed as saved"
           onClose={flow.stay}
           footer={
             <>
@@ -76,9 +76,12 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
             </>
           }
         >
-          <p>You are still signed in. These changes are not saved on the server:</p>
+          <p>Sign-out has not been requested. When you chose Sign out, PlanB could not confirm these as saved:</p>
           <Issues report={phase.report} />
-          {kinds.includes('auth') && <p className="muted small">The server ended this session, so some edits cannot be saved from this page.</p>}
+          {kinds.some((k) => k === 'inflight' || k === 'direct' || k === 'uncertain') && (
+            <p className="muted small">Saves already sent may still complete; PlanB has no answer for them yet.</p>
+          )}
+          {kinds.includes('auth') && <p className="muted small">The server answered some saves as signed out, so those edits cannot be saved from this page.</p>}
           {kinds.includes('conflict') && <p className="muted small">Choose Stay to pick Keep mine or Use newer.</p>}
         </Modal>
       );
@@ -130,7 +133,8 @@ export function SignOutDialog({ flow }: { flow: SignOutFlow }) {
           }
         >
           <p role="alert">
-            PlanB did not confirm that you are signed out ({phase.message}). This device may still be signed in. Nothing is saved until you choose.
+            PlanB did not confirm that you are signed out ({phase.message}). This device may or may not still be signed in. New saves are paused; requests
+            already sent may still complete.
           </p>
           {phase.discard && <p className="small">Your unsaved changes have not been discarded.</p>}
         </Modal>

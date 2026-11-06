@@ -41,7 +41,7 @@ const queuedMessages: Record<QueuedKind, string> = {
   queued: 'Edits are waiting to be sent.',
   held: 'Edits are kept on this page while saving is paused.',
   offline: 'Edits are kept on this page until the connection returns.',
-  auth: 'Edits are kept on this page; the server signed you out.',
+  auth: 'Edits are kept on this page; the server answered them as signed out.',
   server: 'Edits are kept on this page after a server error.',
 };
 

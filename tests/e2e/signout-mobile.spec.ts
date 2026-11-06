@@ -42,7 +42,7 @@ test('phone: sign-out from the More sheet while saves fail (503) is blocked; Sta
   await page.getByLabel('Episode title').fill('Typed offline on the phone');
   await expect(page.locator('.save-status').first()).toContainText('Not saved', { timeout: 10_000 });
   await signOutFromMore(page);
-  const blocked = page.getByRole('dialog', { name: 'Not everything is saved' });
+  const blocked = page.getByRole('dialog', { name: 'Some changes are not confirmed as saved' });
   await expect(blocked).toContainText('until the connection returns');
   const box = (await blocked.boundingBox())!;
   expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);

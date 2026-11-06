@@ -85,9 +85,10 @@ test('offline: Stay keeps the edit and the session; Retry saving saves it and si
   await page.getByLabel('What happens').fill('Typed offline');
   await expect(page.locator('.save-status').first()).toContainText('Not saved', { timeout: 10_000 });
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('until the connection returns');
-  await expect(blocked).toContainText('You are still signed in');
+  await expect(blocked).toContainText('Sign-out has not been requested');
+  await expect(blocked).not.toContainText('signed in');
   await blocked.getByRole('button', { name: 'Stay' }).click();
   await expect(blocked).toHaveCount(0);
   await expect(page.getByLabel('What happens')).toHaveValue('Typed offline');
@@ -113,7 +114,7 @@ test('a server error (500) blocks sign-out until Retry saving succeeds', async (
   await page.getByLabel('What happens').blur();
   await expect(page.getByRole('alert').first()).toContainText('press Retry');
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('after a server error');
   expect(await probe()).toBe(200);
   fail = false;
@@ -135,7 +136,7 @@ test('503 on save: sign out without saving discards only after confirming, and n
   await page.getByLabel('What happens').blur();
   await expect.poll(() => attempts).toBeGreaterThan(0);
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('until the connection returns');
   await blocked.getByRole('button', { name: 'Sign out without saving…' }).click();
   const confirm = dialog(page, 'Sign out without saving?');
@@ -164,7 +165,7 @@ test('an unresolved conflict blocks sign-out; Stay returns to the Keep mine / Us
   });
   await expect(page.getByText('Changed elsewhere while you were editing.')).toBeVisible({ timeout: 10_000 });
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('Keep mine / Use newer');
   await expect(blocked.getByRole('button', { name: 'Retry saving' })).toHaveCount(0);
   await blocked.getByRole('button', { name: 'Stay' }).click();
@@ -188,7 +189,7 @@ test('an edit the server refused is reported and must be explicitly dismissed by
   await page.getByLabel('What happens').blur();
   await expect(page.getByRole('alert').first()).toContainText('Not saved: That text is too long.');
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('That text is too long.');
   await blocked.getByRole('button', { name: 'Sign out without saving…' }).click();
   const confirm = dialog(page, 'Sign out without saving?');
@@ -205,7 +206,8 @@ test('sign-out request fails on the network: "Could not confirm", session still 
   await page.route('**/api/auth/logout', (route) => (fail ? route.abort('internetdisconnected') : route.continue()));
   await clickSignOut(page);
   const unconfirmed = dialog(page, 'Could not confirm sign-out');
-  await expect(unconfirmed).toContainText('may still be signed in');
+  await expect(unconfirmed).toContainText('may or may not still be signed in');
+  await expect(unconfirmed).toContainText('requests already sent may still complete');
   await expect(page.getByRole('button', { name: 'Sign in' })).toHaveCount(0);
   expect(await probe()).toBe(200);
   fail = false;
@@ -305,7 +307,7 @@ test('an image upload in progress is waited for and linked; the drawing it was f
   await expect(dialog(page, 'Signing out')).toBeVisible();
   release();
   // The upload and its link are saved; the drawing now has an unsaved background and blocks.
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('The drawing for', { timeout: 15_000 });
   const ep = await episode(page, id);
   expect(ep.scenes[0].attachments.filter((a: { kind: string }) => a.kind === 'image')).toHaveLength(1);
@@ -324,7 +326,7 @@ test('a drawing edited moments before: no false claim of a local copy; discard d
   await page.mouse.up();
   // Within the 300 ms before the browser copy is written.
   await signOutBehindEditor(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('The drawing for');
   await expect(blocked).not.toContainText('kept in this browser');
   await blocked.getByRole('button', { name: 'Stay' }).click();
@@ -359,7 +361,7 @@ test('typed but unsubmitted input blocks sign-out; a closed skip-reason box does
   const newShot = page.getByLabel('New shot description').first();
   await newShot.fill('A shot I have not added yet');
   await clickSignOut(page);
-  const blocked = dialog(page, 'Not everything is saved');
+  const blocked = dialog(page, 'Some changes are not confirmed as saved');
   await expect(blocked).toContainText('A new shot typed');
   await expect(blocked.getByRole('button', { name: 'Retry saving' })).toHaveCount(0);
   await blocked.getByRole('button', { name: 'Stay' }).click();
