@@ -4215,6 +4215,11 @@ button.pill {
 }
 .more-panel {
   width: 100%;
+  max-height: calc(100vh - max(12px, env(safe-area-inset-top)));
+  max-height: calc(100dvh - max(12px, env(safe-area-inset-top)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   padding: 12px 12px max(16px, env(safe-area-inset-bottom));
@@ -4224,6 +4229,7 @@ button.pill {
 .more-panel .btn {
   justify-content: flex-start;
   min-height: 48px;
+  flex-shrink: 0;
 }
 .is-mobile .shell-main {
   padding-bottom: 74px;

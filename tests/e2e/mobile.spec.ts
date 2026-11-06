@@ -130,7 +130,10 @@ test('phone: storyboard drawing by touch, image upload, reopen (acceptance 14)',
   expect(png.headers()['content-type']).toBe('image/png');
 });
 
-test('phone: navigate between Episodes, Settings and episode More menu, and sign out', async ({ page }) => {
+test('phone: navigate between Episodes, Settings and episode More menu, handle short viewports, and revoke session on sign out', async ({
+  page,
+  playwright,
+}) => {
   await login(page);
   const tabbar = page.locator('.tabbar');
   await expect(tabbar.getByRole('link', { name: 'Episodes' })).toHaveAttribute('aria-current', 'page');
@@ -144,16 +147,79 @@ test('phone: navigate between Episodes, Settings and episode More menu, and sign
   await tabbar.getByRole('link', { name: 'Episodes' }).tap();
   await expect(page.getByRole('heading', { name: 'Episodes', level: 1 })).toBeVisible();
 
-  // Inside an episode, the More sheet also exposes Settings and Sign out.
+  // Inside an episode, open the More sheet and verify normal-phone layout fits without clipping.
   await createEpisode(page, 'Phone nav episode');
   await page.getByRole('button', { name: 'More' }).tap();
   const more = page.getByRole('dialog', { name: 'More' });
-  await expect(more.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  const panel = more.locator('.more-panel');
+  await expect(panel).toBeVisible();
+  const normalBox = await panel.boundingBox();
+  expect(normalBox).not.toBeNull();
+  expect(normalBox!.y).toBeGreaterThanOrEqual(12);
+  expect(normalBox!.y + normalBox!.height).toBeLessThanOrEqual(844);
+
+  // Navigate to Settings from the episode More sheet, then back to the episode.
   await more.getByRole('link', { name: 'Settings' }).tap();
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  await tabbar.getByRole('link', { name: 'Episodes' }).tap();
+  await page.getByRole('link', { name: /Phone nav episode/ }).tap();
 
-  // Sign out from the mobile tab bar returns to the login screen.
-  await tabbar.getByRole('button', { name: 'Sign out' }).tap();
+  // At short viewport height (740 x 440), the More sheet stays within the viewport and scrolls internally.
+  await page.setViewportSize({ width: 740, height: 440 });
+  await page.getByRole('button', { name: 'More' }).tap();
+  await expect(panel).toBeVisible();
+  const shortMetrics = await panel.evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const style = window.getComputedStyle(el);
+    return {
+      top: rect.top,
+      bottom: rect.bottom,
+      height: rect.height,
+      clientHeight: el.clientHeight,
+      scrollHeight: el.scrollHeight,
+      overflowY: style.overflowY,
+    };
+  });
+  expect(shortMetrics.top).toBeGreaterThanOrEqual(12);
+  expect(shortMetrics.bottom).toBeLessThanOrEqual(440);
+  expect(shortMetrics.overflowY).toBe('auto');
+  expect(shortMetrics.scrollHeight).toBeGreaterThan(shortMetrics.clientHeight);
+
+  // Top action is reachable and bottom Sign out action can be scrolled into the viewport and tapped.
+  const kitLink = more.getByRole('link', { name: 'Kit list' });
+  await expect(kitLink).toBeVisible();
+  const kitBox = await kitLink.boundingBox();
+  expect(kitBox!.y).toBeGreaterThanOrEqual(0);
+  expect(kitBox!.y + kitBox!.height).toBeLessThanOrEqual(440);
+
+  const signOutBtn = more.getByRole('button', { name: 'Sign out' });
+  await signOutBtn.scrollIntoViewIfNeeded();
+  const signOutBox = await signOutBtn.boundingBox();
+  expect(signOutBox).not.toBeNull();
+  expect(signOutBox!.y).toBeGreaterThanOrEqual(0);
+  expect(signOutBox!.y + signOutBox!.height).toBeLessThanOrEqual(440);
+
+  // Capture pre-logout session cookie (without logging its value) so we can verify server-side revocation.
+  const preLogoutCookies = await page.context().cookies();
+  expect(preLogoutCookies.length).toBeGreaterThan(0);
+  const cookieHeader = preLogoutCookies.map((c) => `${c.name}=${c.value}`).join('; ');
+
+  // Actually invoke Sign out from the episode's More menu.
+  await signOutBtn.tap();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+
+  // Replay the captured pre-logout session cookie against an authenticated endpoint to prove server-side revocation.
+  const replayContext = await playwright.request.newContext({
+    baseURL: new URL(page.url()).origin,
+    extraHTTPHeaders: { cookie: cookieHeader },
+  });
+  const replayRes = await replayContext.get('/api/auth/me');
+  expect(replayRes.status()).toBe(401);
+  await replayContext.dispose();
+
+  // Refreshing the browser does not restore the authenticated session.
+  await page.reload();
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
 });
+
 
