@@ -239,11 +239,9 @@ export class EpisodeSync implements SaveParticipant {
     return this.queued.length + this.inflight.length + this.conflicted.length > 0;
   }
 
-  private beforeUnload = (e: BeforeUnloadEvent) => {
-    if (this.hasUnsaved) {
-      void this.flush();
-      e.preventDefault();
-    }
+  /** Leaving or reloading: a last attempt to send (not reliable). The app-wide warning is in App. */
+  private beforeUnload = () => {
+    if (this.hasUnsaved) void this.flush();
   };
   private onOnline = () => {
     if (this.state === 'offline') void this.flush();

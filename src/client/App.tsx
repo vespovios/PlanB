@@ -3,7 +3,9 @@ import { api, setSessionUser, type SessionLostDetail, type User } from './api';
 import { saves } from './saves';
 import { SessionRecovery } from './session';
 import { ReauthDialog } from './components/ReauthDialog';
-import { useRoute } from './router';
+import { installNavigator, useRoute } from './router';
+import { HistoryNav, NavigationGuard } from './navigation';
+import { LeaveDialog } from './components/LeaveDialog';
 import { LoginPage } from './pages/Login';
 import { EpisodesPage } from './pages/Episodes';
 import { EpisodePage } from './pages/Episode';
@@ -15,7 +17,6 @@ import { SignOutDialog, useSignOut } from './components/SignOutDialog';
 export function App() {
   const [user, setUserState] = useState<User | null | undefined>(undefined);
   const [offline, setOffline] = useState(false);
-  const route = useRoute();
   const current = useRef(user);
   current.current = user;
   /** The account this page acts for; every request names it (see api.ts). */
@@ -36,6 +37,31 @@ export function App() {
       }),
     [],
   );
+  // Moving to another page never silently drops work; the page shown changes only once a move is
+  // approved. No move at all while signing out or signing in again (those own the page).
+  const navGuard = useMemo(() => new NavigationGuard(), []);
+  const nav = useMemo(
+    () => new HistoryNav({ guard: navGuard, locked: () => recovery.getSnapshot().step !== 'active' || signOutFlow.getSnapshot().step !== 'idle' }),
+    [],
+  );
+  const route = useRoute(nav);
+  useEffect(() => {
+    installNavigator(nav);
+    const stop = nav.start();
+    // Leaving PlanB or reloading: warn about anything not confirmed as saved. (Browsers decide
+    // whether to show it; a closed or evicted phone tab gets no warning, and nothing is saved here.)
+    const warn = (e: BeforeUnloadEvent) => {
+      if (saves.report().outcome === 'confirmed') return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => {
+      stop();
+      installNavigator(null);
+      window.removeEventListener('beforeunload', warn);
+    };
+  }, []);
 
   useEffect(() => {
     api
@@ -54,6 +80,7 @@ export function App() {
       // Pause first, then abandon any sign-out in progress (its thaw cannot resume a paused session).
       recovery.lost(signedIn, detail?.code === 'session_user_changed');
       signOutFlow.reset();
+      navGuard.reset();
     };
     window.addEventListener('planb:signed-out', onSessionLost);
     return () => window.removeEventListener('planb:signed-out', onSessionLost);
@@ -102,6 +129,7 @@ export function App() {
       {page}
       <SignOutDialog flow={signOutFlow} />
       <ReauthDialog recovery={recovery} />
+      <LeaveDialog guard={navGuard} />
     </>
   );
 }
