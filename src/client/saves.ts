@@ -148,9 +148,10 @@ export class SaveCoordinator {
 export const saves = new SaveCoordinator();
 
 /** Keeps a copy of an editor's input in this browser. Returns false if storage refused it (full, private mode). */
-export function storeLocalCopy(key: string, value: string, storage: Pick<Storage, 'setItem'> = localStorage): boolean {
+export function storeLocalCopy(key: string, value: string, storage?: Pick<Storage, 'setItem'>): boolean {
   try {
-    storage.setItem(key, value);
+    // Reading window.localStorage can itself throw when storage is denied.
+    (storage ?? localStorage).setItem(key, value);
     return true;
   } catch {
     return false;

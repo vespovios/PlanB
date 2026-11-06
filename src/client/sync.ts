@@ -577,6 +577,8 @@ export class EpisodeSync implements SaveParticipant {
       return this.exclusive(async () => {
         if (saves.isFrozen) throw frozenError();
         await this.flushInner();
+        // Writes may have been frozen while that flush was waiting for its answer.
+        if (saves.isFrozen) throw frozenError();
         if (this.queued.length || this.conflicted.length) {
           throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
         }

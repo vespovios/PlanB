@@ -295,6 +295,26 @@ describe('freezing at dispatch time', () => {
     expect(kinds()).toEqual(['rejected:rejected:1', 'rejected:rejected:1']);
   });
 
+  it('a direct save is not sent if writes freeze while its own preceding flush is in flight', async () => {
+    const e = await started();
+    const gate = deferred<void>();
+    const sent: Operation[][] = [];
+    server.changes = async (id, base, ops) => {
+      sent.push(ops);
+      if (sent.length === 1) await gate.promise;
+      return apply(id, base, ops);
+    };
+    e.queue(title('queued first'), 10_000);
+    const direct = e.commitNow([{ op: 'updateEpisode', fields: { brief: 'direct' } }], 'Direct save');
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    saves.freeze();
+    gate.resolve();
+    await expect(direct).rejects.toMatchObject({ status: 423, body: { code: 'writes_frozen' } });
+    expect(sent).toHaveLength(1);
+    expect([current.title, current.brief]).toEqual(['queued first', '']);
+    expect(kinds()).toEqual(['rejected:rejected:1']);
+  });
+
   it('an upload finishing after the freeze is not linked, and is reported once as not saved', async () => {
     const e = await started();
     let changes = 0;
@@ -471,5 +491,19 @@ describe('drafts', () => {
         },
       }),
     ).toBe(false);
+    // Denied storage: even reading window.localStorage throws.
+    const denied = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get: () => {
+        throw new DOMException('Access denied', 'SecurityError');
+      },
+    });
+    try {
+      expect(storeLocalCopy('k', 'v')).toBe(false);
+    } finally {
+      if (denied) Object.defineProperty(globalThis, 'localStorage', denied);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
   });
 });
