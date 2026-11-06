@@ -14,7 +14,10 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
   const fileRef = useRef<HTMLInputElement>(null);
   const images = scene.attachments.filter((a): a is ImageAttachment => a.kind === 'image');
   const links = scene.attachments.filter((a) => a.kind === 'link');
-  useUnsavedDraft(`A link being added to "${scene.title}"`, !!linkForm && (!!linkForm.label.trim() || linkForm.url.trim() !== 'https://'), { episodeId });
+  useUnsavedDraft(`A link being added to "${scene.title}"`, !!linkForm && (!!linkForm.label.trim() || linkForm.url.trim() !== 'https://'), {
+    episodeId,
+    discard: () => setLinkForm(null),
+  });
 
   const upload = async (file: File) => {
     setError(null);

@@ -7,11 +7,14 @@ import { EpisodePage } from './pages/Episode';
 import { ChecklistPage } from './pages/Checklist';
 import { PlanDocumentPage } from './pages/PlanDocument';
 import { SettingsPage } from './pages/Settings';
+import { SignOutDialog, useSignOut } from './components/SignOutDialog';
 
 export function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [offline, setOffline] = useState(false);
   const route = useRoute();
+  // Sign-out saves first and returns to the login page only once the server confirmed it.
+  const signOutFlow = useSignOut(() => setUser(null));
 
   useEffect(() => {
     api
@@ -21,7 +24,10 @@ export function App() {
         if (e.offline) setOffline(true);
         setUser(null);
       });
-    const onSignedOut = () => setUser(null);
+    const onSignedOut = () => {
+      signOutFlow.reset();
+      setUser(null);
+    };
     window.addEventListener('planb:signed-out', onSignedOut);
     return () => window.removeEventListener('planb:signed-out', onSignedOut);
   }, []);
@@ -29,21 +35,29 @@ export function App() {
   if (user === undefined) return <div className="boot">Loading PlanB…</div>;
   if (user === null) return <LoginPage onLogin={setUser} offline={offline} />;
 
-  const signOut = async () => {
-    await api.logout().catch(() => undefined);
-    setUser(null);
-  };
+  const signOut = () => void signOutFlow.start();
 
+  let page: React.ReactNode;
   switch (route.name) {
     case 'episode':
-      return <EpisodePage key={route.id} id={route.id} tab={route.tab} user={user} onSignOut={signOut} />;
+      page = <EpisodePage key={route.id} id={route.id} tab={route.tab} user={user} onSignOut={signOut} />;
+      break;
     case 'checklist':
-      return <ChecklistPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
+      page = <ChecklistPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
+      break;
     case 'document':
-      return <PlanDocumentPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
+      page = <PlanDocumentPage key={route.id} id={route.id} user={user} onSignOut={signOut} />;
+      break;
     case 'settings':
-      return <SettingsPage user={user} onSignOut={signOut} />;
+      page = <SettingsPage user={user} onSignOut={signOut} />;
+      break;
     default:
-      return <EpisodesPage user={user} onSignOut={signOut} />;
+      page = <EpisodesPage user={user} onSignOut={signOut} />;
   }
+  return (
+    <>
+      {page}
+      <SignOutDialog flow={signOutFlow} />
+    </>
+  );
 }

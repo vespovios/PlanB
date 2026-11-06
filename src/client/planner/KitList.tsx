@@ -22,7 +22,7 @@ export function KitList({ episode, engine, onShowShots }: { episode: Episode; en
   const gear = episode.gear ?? [];
   const [name, setName] = useState('');
   const [kind, setKind] = useState<GearItem['kind']>('camera');
-  useUnsavedDraft('A new kit item typed', !!name.trim(), { episodeId: episode.id });
+  useUnsavedDraft('A new kit item typed', !!name.trim(), { episodeId: episode.id, discard: () => setName('') });
   const [others, setOthers] = useState<EpisodeSummary[]>([]);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 

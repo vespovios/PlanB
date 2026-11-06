@@ -37,7 +37,7 @@ export function ShotsTab({ episode, engine, selectedId, setSelectedId, onEditSke
   const scenes = episode.scenes;
   const index = Math.max(0, scenes.findIndex((s) => s.id === selectedId));
   const scene: Scene | undefined = scenes[index];
-  useUnsavedDraft(`A new shot typed for "${scene?.title ?? 'a scene'}"`, !!draft.trim(), { episodeId: episode.id });
+  useUnsavedDraft(`A new shot typed for "${scene?.title ?? 'a scene'}"`, !!draft.trim(), { episodeId: episode.id, discard: () => setDraft('') });
   const starts = sceneStarts(episode);
   const gear = episode.gear ?? [];
   const gearName = new Map(gear.map((g) => [g.id, g.name]));

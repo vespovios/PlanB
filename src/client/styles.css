@@ -1531,6 +1531,17 @@ select:focus,
 .confirm-message p {
   margin-top: 0;
 }
+/* The sign-out dialog is rendered outside the app (which is inert meanwhile), above everything. */
+body > .modal-backdrop {
+  z-index: 100;
+}
+.signout-issues {
+  margin: 8px 0 12px;
+  padding-left: 20px;
+}
+.signout-issues li + li {
+  margin-top: 4px;
+}
 .toast {
   position: fixed;
   left: 50%;

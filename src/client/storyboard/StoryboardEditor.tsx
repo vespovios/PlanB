@@ -162,7 +162,21 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   // The drawing as last copied to this browser, so "a copy is kept" is only claimed when true.
   const [copied, setCopied] = useState<string | null>(null);
   // An open drawing with changes is never saved or discarded automatically; the coordinator only reports it.
-  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, { episodeId, retained: dirty && copied === JSON.stringify(doc) });
+  // Set when the user explicitly discarded unsaved work (sign out without saving): no copy is written again.
+  const discardedRef = useRef(false);
+  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, {
+    episodeId,
+    retained: dirty && copied === JSON.stringify(doc),
+    discard: () => {
+      discardedRef.current = true;
+      setCopied(null);
+      try {
+        localStorage.removeItem(draftKey(episodeId, scene.id));
+      } catch {
+        /* storage denied: there is no copy to remove */
+      }
+    },
+  });
 
   // Offer to recover a drawing that was not saved (closed tab, failed save, lost connection).
   useEffect(() => {
@@ -180,6 +194,7 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   useEffect(() => {
     if (!dirty) return;
     const t = setTimeout(() => {
+      if (discardedRef.current) return;
       if (storeLocalCopy(draftKey(episodeId, scene.id), JSON.stringify({ doc, at: new Date().toISOString() }))) setCopied(JSON.stringify(doc));
     }, 300);
     return () => clearTimeout(t);

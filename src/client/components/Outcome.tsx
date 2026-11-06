@@ -42,9 +42,15 @@ export function SkipReason({ shot, onChange }: { shot: Shot; onChange: (skipReas
   const justSkipped = !!shot.outcomeAt && Date.now() - Date.parse(shot.outcomeAt) < 10 * 60_000;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  useUnsavedDraft(`A skip reason typed for "${shot.description}"`, shot.outcome === 'skipped' && !!draft.trim());
+  const choosing = shot.outcome === 'skipped' && (shot.skipReason ? editing : editing || justSkipped);
+  // Only typed text in a visible reason box counts as unsaved; closing the box clears it.
+  useUnsavedDraft(`A skip reason typed for "${shot.description}"`, choosing && !!draft.trim(), { discard: () => setDraft('') });
+  const close = () => {
+    setEditing(false);
+    setDraft('');
+  };
   if (shot.outcome !== 'skipped') return null;
-  if (shot.skipReason ? !editing : !editing && !justSkipped) {
+  if (!choosing) {
     return (
       <span className="skip-reason" onClick={(e) => e.stopPropagation()}>
         <span className="skip-tag">Skipped{shot.skipReason ? ` · ${shot.skipReason}` : ''}</span>
@@ -77,12 +83,12 @@ export function SkipReason({ shot, onChange }: { shot: Shot; onChange: (skipReas
         <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Other…" aria-label="Other reason" maxLength={160} />
       </form>
       {editing && !shot.skipReason && (
-        <button type="button" className="link-btn" onClick={() => setEditing(false)}>
+        <button type="button" className="link-btn" onClick={close}>
           cancel
         </button>
       )}
       {editing && shot.skipReason && (
-        <button type="button" className="link-btn" onClick={() => setEditing(false)}>
+        <button type="button" className="link-btn" onClick={close}>
           keep
         </button>
       )}
