@@ -690,7 +690,7 @@ export class EpisodeSync implements SaveParticipant {
     };
     add('uncertain', 'inflight', this.inflight.length, 'Edits were sent; no answer from the server yet.');
     add('uncertain', 'direct', this.active.size, 'A drawing, image, link or restore is still being saved.');
-    const held: QueuedKind = this.failure ?? (saves.isFrozen ? 'held' : this.state === 'offline' ? 'offline' : 'queued');
+    const held: QueuedKind = this.failure ?? (this.state === 'offline' ? 'offline' : saves.isFrozen ? 'held' : 'queued');
     add('blocked', held, this.queued.length, queuedMessages[held]);
     add('blocked', 'conflict', this.conflicted.length, 'Edits need a Keep mine / Use newer choice.');
     for (const d of this.dropped) add(d.outcome, d.outcome, d.count, d.message);
@@ -741,6 +741,11 @@ export class EpisodeSync implements SaveParticipant {
   retryHeld() {
     if (this.failure === 'auth' || !this.queued.length) return;
     if (this.state === 'error' || this.state === 'offline') this.retry();
+  }
+
+  /** A request or direct save is still running. */
+  isBusy() {
+    return this.sending || this.active.size > 0;
   }
 
   /** Writes were thawed: send what was held. */

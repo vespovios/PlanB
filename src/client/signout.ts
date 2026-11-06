@@ -118,7 +118,8 @@ export class SignOutFlow {
     const report = this.c.report();
     if (report.outcome === 'confirmed') return this.logout(run, false);
     this.c.thaw();
-    this.set({ step: 'blocked', report });
+    // Shown as it is now that writes resume (nothing is "paused" any more).
+    this.set({ step: 'blocked', report: this.c.report() });
   }
 
   private async logout(run: number, discard: boolean) {

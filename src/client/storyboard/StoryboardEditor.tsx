@@ -164,7 +164,9 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   // An open drawing with changes is never saved or discarded automatically; the coordinator only reports it.
   // Set when the user explicitly discarded unsaved work (sign out without saving): no copy is written again.
   const discardedRef = useRef(false);
-  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, {
+  // A background upload is about to change the drawing, so it counts as unsaved from the start;
+  // the drawing's own change then takes over in the same render, with no gap.
+  const releaseDraft = useUnsavedDraft(`The drawing for "${scene.title}"`, dirty || uploading, {
     episodeId,
     retained: dirty && copied === JSON.stringify(doc),
     discard: () => {
@@ -465,6 +467,8 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
         }
         await attempt();
       }
+      // Saved: no longer a draft, even before the editor closes.
+      releaseDraft();
       localStorage.removeItem(draftKey(episodeId, scene.id));
       onClose();
     } catch (e) {

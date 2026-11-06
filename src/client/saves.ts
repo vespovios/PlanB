@@ -1,7 +1,7 @@
 // Save coordinator: one place that knows about every piece of work that is not yet confirmed
 // by the server, so sign-out, session expiry and navigation can wait for it, hold it, or tell
 // the user exactly what is still at risk. It never saves or discards anything by itself.
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 /**
  * confirmed: nothing outstanding. blocked: work is kept on this page but cannot be saved without
@@ -54,6 +54,8 @@ export interface SaveParticipant {
   discard(): void;
   /** Resend saves held after a server error or while offline (not signed-out ones). */
   retryHeld(): void;
+  /** A request or direct save is still running. */
+  isBusy(): boolean;
 }
 
 const rank: Record<SaveOutcome, number> = { confirmed: 0, rejected: 1, uncertain: 2, blocked: 3 };
@@ -168,7 +170,12 @@ export class SaveCoordinator {
    */
   async settle(timeoutMs = DEFAULT_SETTLE_MS): Promise<SaveReport> {
     const deadline = Date.now() + timeoutMs;
-    await Promise.all([...this.participants].map((p) => p.settle(deadline).catch(() => undefined)));
+    do {
+      await Promise.all([...this.participants].map((p) => p.settle(deadline).catch(() => undefined)));
+      // Let whoever awaited a direct save finish its follow-up (close an editor and release its
+      // draft, or start the next step) before reporting.
+      await new Promise((r) => setTimeout(r, 0));
+    } while (Date.now() < deadline && [...this.participants].some((p) => p.isBusy()));
     return this.report();
   }
 }
@@ -193,8 +200,19 @@ export function storeLocalCopy(key: string, value: string, storage?: Pick<Storag
 export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean; discard?: () => void } = {}) {
   const discard = useRef(opts.discard);
   discard.current = opts.discard;
+  const release = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!active) return;
-    return saves.addDraft(label, { episodeId: opts.episodeId, retained: opts.retained, discard: () => discard.current?.() });
+    const done = saves.addDraft(label, { episodeId: opts.episodeId, retained: opts.retained, discard: () => discard.current?.() });
+    release.current = done;
+    return () => {
+      done();
+      if (release.current === done) release.current = null;
+    };
   }, [label, active, opts.episodeId, opts.retained]);
+  /** Releases the draft at once (e.g. the moment its save is confirmed), without waiting for a re-render. */
+  return useCallback(() => {
+    release.current?.();
+    release.current = null;
+  }, []);
 }

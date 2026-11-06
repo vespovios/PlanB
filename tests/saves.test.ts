@@ -455,6 +455,7 @@ describe('errors that are not answers from the server', () => {
       acknowledgeDropped: () => undefined,
       discard: () => undefined,
       retryHeld: () => undefined,
+      isBusy: () => false,
       issues: (): never => {
         throw new Error('boom');
       },
@@ -505,6 +506,36 @@ describe('drafts', () => {
       if (denied) Object.defineProperty(globalThis, 'localStorage', denied);
       else delete (globalThis as { localStorage?: unknown }).localStorage;
     }
+  });
+});
+
+describe('settling around direct saves', () => {
+  it("lets the caller of a direct save finish its follow-up (releasing its draft) before reporting", async () => {
+    const e = await started();
+    const gate = deferred<void>();
+    server.changes = async (id, base, ops) => {
+      await gate.promise;
+      return apply(id, base, ops);
+    };
+    const release = saves.addDraft('The drawing for "Opening"');
+    void (async () => {
+      await e.commitNow([title('drawn')], 'Saved storyboard', { kept: true });
+      release();
+    })();
+    const settling = saves.settle(2000);
+    gate.resolve();
+    expect(await settling).toEqual({ outcome: 'confirmed', issues: [] });
+  });
+
+  it('reports offline edits as offline even while writes are frozen', async () => {
+    const e = await started();
+    server.changes = async () => {
+      throw new ApiError(0, 'Cannot reach the PlanB server.');
+    };
+    e.queue(title('offline'));
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('offline'));
+    saves.freeze();
+    expect(kinds()).toEqual(['blocked:offline:1']);
   });
 });
 
