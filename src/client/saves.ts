@@ -1,7 +1,7 @@
 // Save coordinator: one place that knows about every piece of work that is not yet confirmed
 // by the server, so sign-out, session expiry and navigation can wait for it, hold it, or tell
 // the user exactly what is still at risk. It never saves or discards anything by itself.
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * confirmed: nothing outstanding. blocked: work is kept on this page but cannot be saved without
@@ -50,6 +50,10 @@ export interface SaveParticipant {
   resume(): void;
   /** The user has seen the rejected and uncertain items; stop reporting them. */
   acknowledgeDropped(): void;
+  /** Explicitly drop everything held locally and stop; requests already sent are not recalled. */
+  discard(): void;
+  /** Resend saves held after a server error or while offline (not signed-out ones). */
+  retryHeld(): void;
 }
 
 const rank: Record<SaveOutcome, number> = { confirmed: 0, rejected: 1, uncertain: 2, blocked: 3 };
@@ -64,7 +68,7 @@ export const DEFAULT_SETTLE_MS = 10_000;
 
 export class SaveCoordinator {
   private participants = new Set<SaveParticipant>();
-  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean }>();
+  private drafts = new Map<symbol, { label: string; episodeId?: string; retained: boolean; discard?: () => void }>();
   private frozen = false;
 
   /** Engines register while mounted and stay registered after unmount until their work is resolved. */
@@ -81,10 +85,11 @@ export class SaveCoordinator {
   /**
    * Records that an editor holds input that is not saved (e.g. an open drawing). Returns the
    * release function. `retained` means a copy is also kept in this browser (localStorage).
+   * `discard` clears the input (and any local copy) when the user explicitly discards it.
    */
-  addDraft(label: string, opts: { episodeId?: string; retained?: boolean } = {}): () => void {
+  addDraft(label: string, opts: { episodeId?: string; retained?: boolean; discard?: () => void } = {}): () => void {
     const key = Symbol(label);
-    this.drafts.set(key, { label, episodeId: opts.episodeId, retained: !!opts.retained });
+    this.drafts.set(key, { label, episodeId: opts.episodeId, retained: !!opts.retained, discard: opts.discard });
     return () => this.drafts.delete(key);
   }
 
@@ -134,6 +139,29 @@ export class SaveCoordinator {
     this.participants.forEach((p) => p.acknowledgeDropped());
   }
 
+  /** Resend saves held after server errors or while offline; then settle() again to wait for them. */
+  retryHeld() {
+    this.participants.forEach((p) => p.retryHeld());
+  }
+
+  /**
+   * Explicit discard (only after the user confirmed it): drops every unsaved edit, conflict, report
+   * and draft, including drafts' local copies. Requests already sent are not recalled.
+   */
+  discardAll() {
+    [...this.participants].forEach((p) => p.discard());
+    this.participants.clear();
+    const drafts = [...this.drafts.values()];
+    this.drafts.clear();
+    for (const d of drafts) {
+      try {
+        d.discard?.();
+      } catch {
+        /* the input is gone with the page anyway */
+      }
+    }
+  }
+
   /**
    * Save barrier: sends everything that can be sent and waits (at most timeoutMs) for answers,
    * then reports. It does not retry refused or signed-out saves, resolve conflicts, or save drafts.
@@ -158,10 +186,15 @@ export function storeLocalCopy(key: string, value: string, storage?: Pick<Storag
   }
 }
 
-/** Registers an editor's unsaved input with the coordinator while `active` is true. */
-export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean } = {}) {
+/**
+ * Registers an editor's unsaved input with the coordinator while `active` is true. `discard` is
+ * called only if the user explicitly discards unsaved work (e.g. "Discard and sign out").
+ */
+export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean; discard?: () => void } = {}) {
+  const discard = useRef(opts.discard);
+  discard.current = opts.discard;
   useEffect(() => {
     if (!active) return;
-    return saves.addDraft(label, opts);
+    return saves.addDraft(label, { episodeId: opts.episodeId, retained: opts.retained, discard: () => discard.current?.() });
   }, [label, active, opts.episodeId, opts.retained]);
 }

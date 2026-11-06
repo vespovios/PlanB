@@ -124,6 +124,8 @@ export class EpisodeSync implements SaveParticipant {
   private sending = false;
   private events: EventSource | null = null;
   private stopped = false;
+  /** Everything held here was explicitly discarded; late answers are ignored and nothing is resent. */
+  private discarded = false;
   /** Highest revision announced by the server while a save was in flight. */
   private remoteSeen = 0;
   /** A refused change stays reported until the user dismisses it. */
@@ -195,6 +197,7 @@ export class EpisodeSync implements SaveParticipant {
   // --- Lifecycle -------------------------------------------------------------------
 
   start() {
+    if (this.discarded) return;
     this.stopped = false;
     saves.register(this);
     void this.load();
@@ -286,7 +289,7 @@ export class EpisodeSync implements SaveParticipant {
     return this.exclusive(async () => {
       try {
         const { episode } = await api.episode(this.id);
-        if (this.server && episode.revision <= this.server.revision) return;
+        if (this.discarded || (this.server && episode.revision <= this.server.revision)) return;
         this.rebase(episode);
       } catch (e) {
         if ((e as ApiError).offline) this.setOffline((e as Error).message);
@@ -342,7 +345,7 @@ export class EpisodeSync implements SaveParticipant {
 
   private schedule(ms: number) {
     clearTimeout(this.timer);
-    if (saves.isFrozen) return;
+    if (saves.isFrozen || this.discarded) return;
     this.timer = setTimeout(() => void this.flush(), ms);
   }
 
@@ -362,7 +365,7 @@ export class EpisodeSync implements SaveParticipant {
   private async flushInner(): Promise<void> {
     // Checked when the send is about to happen, not only when it was requested: a flush waiting
     // behind another request must not go out after writes were frozen. The edits stay queued.
-    if (!this.server || !this.queued.length || saves.isFrozen) return;
+    if (!this.server || !this.queued.length || saves.isFrozen || this.discarded) return;
     clearTimeout(this.retryTimer);
     this.sending = true;
     this.inflight = this.queued;
@@ -375,6 +378,7 @@ export class EpisodeSync implements SaveParticipant {
         this.server.revision,
         this.inflight.map((p) => p.op),
       );
+      if (this.discarded) return;
       this.server = res.episode;
       // Later edits to the same fields are now based on what was just saved.
       for (const q of this.queued) {
@@ -393,6 +397,7 @@ export class EpisodeSync implements SaveParticipant {
       const err = e as ApiError;
       const failed = this.inflight;
       this.inflight = [];
+      if (this.discarded) return;
       if (!(e instanceof ApiError)) {
         // Not an answer from the server (e.g. the response could not be read): the batch may have
         // been applied. Keep it for Retry; a replay is checked against the revision as usual.
@@ -405,7 +410,7 @@ export class EpisodeSync implements SaveParticipant {
         this.queued = [...failed, ...this.queued];
         try {
           const { episode } = await api.episode(this.id);
-          this.rebase(episode);
+          if (!this.discarded) this.rebase(episode);
         } catch (e2) {
           this.setOffline((e2 as Error).message);
         }
@@ -442,6 +447,7 @@ export class EpisodeSync implements SaveParticipant {
   }
 
   private setOffline(message: string) {
+    if (this.discarded) return;
     this.state = 'offline';
     this.error = message;
     clearTimeout(this.retryTimer);
@@ -714,6 +720,27 @@ export class EpisodeSync implements SaveParticipant {
         await until(Promise.allSettled([this.lock, ...this.active]));
       } else return;
     }
+  }
+
+  /**
+   * Sign-out "discard": drops every edit, conflict and report held here and stops the engine. A
+   * request already sent cannot be recalled; the server may still apply it, and its answer is ignored.
+   */
+  discard() {
+    this.discarded = true;
+    this.queued = [];
+    this.conflicted = [];
+    this.conflictInfo = null;
+    this.dropped = [];
+    this.stop();
+    clearTimeout(this.retryTimer);
+    saves.unregister(this);
+  }
+
+  /** Retry saves held after a server error or while offline. Signed-out saves are not resent from here. */
+  retryHeld() {
+    if (this.failure === 'auth' || !this.queued.length) return;
+    if (this.state === 'error' || this.state === 'offline') this.retry();
   }
 
   /** Writes were thawed: send what was held. */

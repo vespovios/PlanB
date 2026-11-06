@@ -75,10 +75,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   saves.thaw();
-  for (const e of engines) {
-    e.stop();
-    saves.unregister(e);
-  }
+  // Discard rather than stop: a stopped engine with unsaved work keeps retrying (by design).
+  for (const e of engines) e.discard();
   engines = [];
 });
 
@@ -455,6 +453,8 @@ describe('errors that are not answers from the server', () => {
       settle: async () => undefined,
       resume: () => undefined,
       acknowledgeDropped: () => undefined,
+      discard: () => undefined,
+      retryHeld: () => undefined,
       issues: (): never => {
         throw new Error('boom');
       },
@@ -505,5 +505,57 @@ describe('drafts', () => {
       if (denied) Object.defineProperty(globalThis, 'localStorage', denied);
       else delete (globalThis as { localStorage?: unknown }).localStorage;
     }
+  });
+});
+
+describe('explicit discard', () => {
+  it('drops local work, ignores the late answer of a request already sent, and leaves no timers', async () => {
+    const e = await started();
+    const gate = deferred<void>();
+    let calls = 0;
+    server.changes = async (id, base, ops) => {
+      calls++;
+      await gate.promise;
+      throw new ApiError(0, 'Connection lost');
+    };
+    e.queue(title('sent'));
+    await vi.waitFor(() => expect(calls).toBe(1));
+    e.queue({ op: 'updateEpisode', fields: { brief: 'queued' } }, 10_000);
+    const release = saves.addDraft('A new shot typed', { discard: vi.fn() });
+    const draftDiscard = vi.fn();
+    saves.addDraft('The drawing', { retained: true, discard: draftDiscard });
+    saves.discardAll();
+    release();
+    expect(draftDiscard).toHaveBeenCalledOnce();
+    expect(saves.isRegistered(e)).toBe(false);
+    expect(saves.report()).toEqual({ outcome: 'confirmed', issues: [] });
+    gate.resolve();
+    await new Promise((r) => setTimeout(r, 2500));
+    // The failed answer is not requeued and no retry is scheduled.
+    expect(calls).toBe(1);
+    expect(e.hasUnsaved).toBe(false);
+  });
+
+  it('retryHeld resends server-error saves but never signed-out ones', async () => {
+    const e = await started();
+    let calls = 0;
+    server.changes = async () => {
+      calls++;
+      throw new ApiError(401, 'Sign in');
+    };
+    e.queue(title('a'));
+    await vi.waitFor(() => expect(e.getSnapshot().state).toBe('error'));
+    saves.retryHeld();
+    await tick();
+    expect(calls).toBe(1);
+    server.changes = async () => {
+      calls++;
+      throw new ApiError(500, 'Boom');
+    };
+    e.retry();
+    await vi.waitFor(() => expect(kinds()).toEqual(['blocked:server:1']));
+    server.changes = apply;
+    saves.retryHeld();
+    await vi.waitFor(() => expect(current.title).toBe('a'));
   });
 });
