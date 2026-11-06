@@ -3,6 +3,7 @@ import { randomId } from '../../shared/ids';
 import { GEAR_KINDS, type Episode, type EpisodeSummary, type GearItem } from '../../shared/model';
 import { api } from '../api';
 import type { EpisodeSync } from '../sync';
+import { useUnsavedDraft } from '../saves';
 import { TextField } from '../components/ui';
 
 export const GEAR_KIND_LABELS: Record<GearItem['kind'], string> = {
@@ -21,6 +22,7 @@ export function KitList({ episode, engine, onShowShots }: { episode: Episode; en
   const gear = episode.gear ?? [];
   const [name, setName] = useState('');
   const [kind, setKind] = useState<GearItem['kind']>('camera');
+  useUnsavedDraft('A new kit item typed', !!name.trim(), { episodeId: episode.id });
   const [others, setOthers] = useState<EpisodeSummary[]>([]);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 

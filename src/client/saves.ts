@@ -147,6 +147,16 @@ export class SaveCoordinator {
 
 export const saves = new SaveCoordinator();
 
+/** Keeps a copy of an editor's input in this browser. Returns false if storage refused it (full, private mode). */
+export function storeLocalCopy(key: string, value: string, storage: Pick<Storage, 'setItem'> = localStorage): boolean {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Registers an editor's unsaved input with the coordinator while `active` is true. */
 export function useUnsavedDraft(label: string, active: boolean, opts: { episodeId?: string; retained?: boolean } = {}) {
   useEffect(() => {

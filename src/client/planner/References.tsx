@@ -3,6 +3,7 @@ import { LIMITS, type Attachment, type ImageAttachment, type Scene } from '../..
 import { randomId } from '../../shared/ids';
 import { ApiError, api, assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
+import { useUnsavedDraft } from '../saves';
 import { Confirm, Modal, TextField } from '../components/ui';
 
 export function References({ scene, engine, episodeId }: { scene: Scene; engine: EpisodeSync; episodeId: string }) {
@@ -13,6 +14,7 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
   const fileRef = useRef<HTMLInputElement>(null);
   const images = scene.attachments.filter((a): a is ImageAttachment => a.kind === 'image');
   const links = scene.attachments.filter((a) => a.kind === 'link');
+  useUnsavedDraft(`A link being added to "${scene.title}"`, !!linkForm && (!!linkForm.label.trim() || linkForm.url.trim() !== 'https://'), { episodeId });
 
   const upload = async (file: File) => {
     setError(null);
@@ -83,7 +85,10 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
             e.preventDefault();
             setError(null);
             try {
-              await engine.commitNow([{ op: 'addLink', sceneId: scene.id, id: linkForm.id, label: linkForm.label.trim(), url: linkForm.url.trim() }], `Added link to "${scene.title}"`);
+              // The form stays open with the link if this fails, so the failure is not recorded as lost.
+              await engine.commitNow([{ op: 'addLink', sceneId: scene.id, id: linkForm.id, label: linkForm.label.trim(), url: linkForm.url.trim() }], `Added link to "${scene.title}"`, {
+                kept: true,
+              });
               setLinkForm(null);
             } catch (err) {
               setError((err as Error).message.replace(/^Operation \d+ \(\w+\): /, ''));

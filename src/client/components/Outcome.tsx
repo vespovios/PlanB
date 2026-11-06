@@ -1,6 +1,7 @@
 // Shot outcome on the shoot: open ○ / filmed ✓ / skipped ✕, one tap each, with an optional
 // one-tap skip reason. Skipped is resolved but never filmed.
 import { useState } from 'react';
+import { useUnsavedDraft } from '../saves';
 import type { Shot, ShotOutcome } from '../../shared/model';
 
 export const SKIP_REASONS = ['Wind too strong', 'Ran out of daylight', 'Owner unavailable', 'Covered by another shot', 'No access', 'Weather'];
@@ -41,6 +42,7 @@ export function SkipReason({ shot, onChange }: { shot: Shot; onChange: (skipReas
   const justSkipped = !!shot.outcomeAt && Date.now() - Date.parse(shot.outcomeAt) < 10 * 60_000;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  useUnsavedDraft(`A skip reason typed for "${shot.description}"`, shot.outcome === 'skipped' && !!draft.trim());
   if (shot.outcome !== 'skipped') return null;
   if (shot.skipReason ? !editing : !editing && !justSkipped) {
     return (

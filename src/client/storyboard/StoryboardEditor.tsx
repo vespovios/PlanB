@@ -15,7 +15,7 @@ import {
 } from '../../shared/storyboard';
 import { ApiError, api, assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
-import { useUnsavedDraft } from '../saves';
+import { storeLocalCopy, useUnsavedDraft } from '../saves';
 import { Confirm, capturePointer } from '../components/ui';
 
 type Tool = 'select' | 'freehand' | 'arrow' | 'rect' | 'ellipse' | 'text';
@@ -159,8 +159,10 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   const fileRef = useRef<HTMLInputElement>(null);
   const images = scene.attachments.filter((a): a is ImageAttachment => a.kind === 'image');
   const dirty = JSON.stringify(doc) !== JSON.stringify(saved);
+  // The drawing as last copied to this browser, so "a copy is kept" is only claimed when true.
+  const [copied, setCopied] = useState<string | null>(null);
   // An open drawing with changes is never saved or discarded automatically; the coordinator only reports it.
-  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, { episodeId, retained: true });
+  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, { episodeId, retained: dirty && copied === JSON.stringify(doc) });
 
   // Offer to recover a drawing that was not saved (closed tab, failed save, lost connection).
   useEffect(() => {
@@ -177,7 +179,9 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   }, []);
   useEffect(() => {
     if (!dirty) return;
-    const t = setTimeout(() => localStorage.setItem(draftKey(episodeId, scene.id), JSON.stringify({ doc, at: new Date().toISOString() })), 300);
+    const t = setTimeout(() => {
+      if (storeLocalCopy(draftKey(episodeId, scene.id), JSON.stringify({ doc, at: new Date().toISOString() }))) setCopied(JSON.stringify(doc));
+    }, 300);
     return () => clearTimeout(t);
   }, [doc, dirty]);
 

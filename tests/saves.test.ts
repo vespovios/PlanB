@@ -27,7 +27,7 @@ vi.mock('../src/client/api', async (orig) => {
 
 const { ApiError } = await import('../src/client/api.js');
 const { EpisodeSync } = await import('../src/client/sync.js');
-const { saves } = await import('../src/client/saves.js');
+const { saves, storeLocalCopy } = await import('../src/client/saves.js');
 const { applyOperations } = await import('../src/shared/ops.js');
 
 const ID = 'ep_test';
@@ -455,5 +455,21 @@ describe('drafts', () => {
     expect(saves.report().issues[0].message).toMatch(/kept in this browser/);
     release();
     expect(saves.report().outcome).toBe('confirmed');
+  });
+
+  it('claims a local copy only when one was stored', () => {
+    const release = saves.addDraft('The drawing for "Opening"', { episodeId: ID, retained: false });
+    expect(saves.report().issues[0].message).not.toMatch(/kept/);
+    release();
+    const stored = new Map<string, string>();
+    expect(storeLocalCopy('k', 'v', { setItem: (k, v) => void stored.set(k, v) })).toBe(true);
+    expect(stored.get('k')).toBe('v');
+    expect(
+      storeLocalCopy('k', 'v', {
+        setItem: () => {
+          throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        },
+      }),
+    ).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { randomId } from '../../shared/ids';
 import { capturedCount, outcomeSummary, type GearItem, type Scene, type Shot } from '../../shared/model';
 import { JournalRefs, OutcomeControl, SkipReason } from '../components/Outcome';
 import type { EpisodeSync } from '../sync';
+import { useUnsavedDraft } from '../saves';
 import { Disclosure, TextField } from '../components/ui';
 import { ShotSizeIcon } from '../components/ShotIcons';
 import { ShotGear } from './KitList';
@@ -26,6 +27,7 @@ const TEXT_DEBOUNCE = 700;
 
 export function ShotsPanel({ scene, engine, gear = [] }: { scene: Scene; engine: EpisodeSync; gear?: GearItem[] }) {
   const [draft, setDraft] = useState('');
+  useUnsavedDraft(`A new shot typed for "${scene.title}"`, !!draft.trim(), { episodeId: engine.id });
   const counts = capturedCount(scene);
   const total = counts.total;
   const add = () => {
