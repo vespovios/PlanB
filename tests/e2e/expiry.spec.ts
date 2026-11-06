@@ -242,3 +242,94 @@ test('a 401 while signing out pauses instead of losing the edit; after signing i
   await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
   expect(await meStatus(page, playwright, newCookie)).toBe(401);
 });
+
+test('signing out after another tab switched accounts leaves that account signed in, and asks to sign in again', async ({ page, context }) => {
+  await start(page, 'Expiry cross-account sign-out');
+  const otherTab = await context.newPage();
+  const origin = new URL(page.url()).origin;
+  expect((await otherTab.request.post(`${origin}/api/auth/login`, { data: SOMEONE })).status()).toBe(200);
+  const someoneCookie = await cookieHeader(page);
+  await page.locator('.rail .avatar').click();
+  await page.locator('.rail-menu').getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(reauth(page)).toContainText('signed in to a different account');
+  // Someone's session and the browser's cookie are untouched.
+  expect(await cookieHeader(page)).toBe(someoneCookie);
+  const me = await otherTab.request.get(`${origin}/api/auth/me`);
+  expect(me.status()).toBe(200);
+  expect((await me.json()).user.email).toBe(SOMEONE.email);
+  await otherTab.close();
+  // The page is hidden while the account is unverified.
+  await expect(page.locator('#root')).toHaveClass(/concealed/);
+  expect(await page.locator('#root').evaluate((el) => getComputedStyle(el).visibility)).toBe('hidden');
+  await signInAgain(page, CREATOR.password);
+  await expect(page.locator('#root')).not.toHaveClass(/concealed/);
+  await expect(page.getByLabel('Episode title')).toBeVisible();
+});
+
+test('/me succeeds but the session ends before the episode loads: after signing in again it appears without a reload', async ({ page, playwright }) => {
+  const { id } = await start(page, 'Expiry first load');
+  const cookie = await cookieHeader(page);
+  let revoked = false;
+  await page.route(`**/api/episodes/${id}`, async (route) => {
+    if (!revoked && route.request().method() === 'GET') {
+      revoked = true;
+      await revokeElsewhere(page, playwright, cookie);
+    }
+    await route.continue();
+  });
+  await page.goto('about:blank');
+  await page.goto(`/#/e/${id}/plan`); // fresh load: /api/auth/me is answered first, then the episode is refused
+  await expect(reauth(page)).toBeVisible();
+  let reloaded = false;
+  page.on('framenavigated', () => (reloaded = true));
+  await signInAgain(page, CREATOR.password);
+  await expect(page.getByLabel('Episode title')).toHaveValue('Expiry first load');
+  expect(reloaded).toBe(false);
+});
+
+test('the episode list refused because the session ended loads after signing in again', async ({ page, playwright }) => {
+  await start(page, 'Expiry episode list');
+  const cookie = await cookieHeader(page);
+  let revoked = false;
+  await page.route('**/api/episodes', async (route) => {
+    if (!revoked && route.request().method() === 'GET') {
+      revoked = true;
+      await revokeElsewhere(page, playwright, cookie);
+    }
+    await route.continue();
+  });
+  await page.getByRole('link', { name: 'All episodes' }).first().click();
+  await expect(reauth(page)).toBeVisible();
+  await signInAgain(page, CREATOR.password);
+  await expect(page.getByRole('link', { name: /Expiry episode list/ })).toBeVisible();
+});
+
+test('a sign-in that never answers does not trap the page: it times out, Leave stays available, and a late answer does not resume it', async ({ page, playwright }) => {
+  test.setTimeout(60_000);
+  const { id } = await start(page, 'Expiry hanging sign-in');
+  await revokeElsewhere(page, playwright, await cookieHeader(page));
+  await page.getByLabel('What happens').fill('Kept through a hanging sign-in');
+  await page.getByLabel('What happens').blur();
+  await expect(reauth(page)).toBeVisible();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let hang = true;
+  await page.route('**/api/auth/login', async (route) => {
+    if (!hang) return route.continue();
+    hang = false;
+    await held;
+    await route.continue().catch(() => undefined);
+  });
+  await reauth(page).getByLabel('Password').fill(CREATOR.password);
+  await reauth(page).getByRole('button', { name: 'Sign in' }).click();
+  await expect(reauth(page).getByRole('button', { name: 'Leave without saving…' })).toBeEnabled();
+  await expect(reauth(page).getByRole('alert')).toContainText('No answer from PlanB', { timeout: 20_000 });
+  release(); // the abandoned attempt now completes on the server
+  await page.waitForTimeout(1000);
+  await expect(reauth(page)).toBeVisible();
+  expect((await episode(page, id)).scenes[0].description).not.toBe('Kept through a hanging sign-in');
+  await reauth(page).getByRole('button', { name: 'Sign in' }).click();
+  await expect(reauth(page)).toHaveCount(0);
+  await waitSaved(page);
+  expect((await episode(page, id)).scenes[0].description).toBe('Kept through a hanging sign-in');
+});
