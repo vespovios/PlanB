@@ -181,27 +181,27 @@ export function useLocalGuard() {
 
 /**
  * Browser history for the hash router. Every entry is numbered, so Back/Forward (popstate) can be
- * told apart and undone exactly; app links and navigate() push only once a move is approved. The
- * rendered route only changes when a move is approved, so the page being left stays mounted.
+ * placed exactly. The route on screen changes only once a move is approved, so the page being left
+ * stays mounted.
+ *
+ * A Back/Forward that needs a decision leaves the browser where the user took it while the dialog is
+ * open; approving then just shows that page (no history traversal of ours that could race with the
+ * user's), and Stay or a cancelled move goes back to the page on screen. That correction is the only
+ * traversal we make, and when it lands the entry actually reached is checked and corrected again if
+ * the user moved meanwhile, so it always ends exactly on the page shown. App links and navigate()
+ * push an entry only once approved.
  */
 export class HistoryNav {
   private committed: string;
+  /** Entry of the page on screen. */
   private index: number;
+  /** Entry the browser is on, as last reported. */
+  private current: number;
   private listeners = new Set<() => void>();
-  /** A Back/Forward the user approved, on its way to this entry. */
-  private approving: { index: number; hash: string; arrive: () => boolean; fail: () => void } | null = null;
-  /**
-   * One history.go() of ours is under way to put the address back. Only one at a time: history.go
-   * is relative to wherever the browser is when it runs, so each correction is computed from the
-   * entry actually reached.
-   */
+  /** A Back/Forward being decided; the browser was left on its entry. */
+  private deciding: { index: number; hash: string } | null = null;
+  /** One correcting history.go() of ours is under way (only one at a time; see above). */
   private correcting = false;
-
-  private restore(idx: number) {
-    if (this.correcting || idx === this.index) return;
-    this.correcting = true;
-    history.go(this.index - idx);
-  }
 
   constructor(
     private deps: {
@@ -213,6 +213,7 @@ export class HistoryNav {
     const st = history.state as { planbIndex?: number } | null;
     this.index = typeof st?.planbIndex === 'number' ? st.planbIndex : 0;
     if (typeof st?.planbIndex !== 'number') history.replaceState({ ...(st ?? {}), planbIndex: this.index }, '', location.href);
+    this.current = this.index;
     this.committed = location.hash || '#/';
   }
 
@@ -237,22 +238,23 @@ export class HistoryNav {
     this.listeners.forEach((fn) => fn());
   }
 
+  /** Puts the browser back on the entry of the page on screen. */
+  private restore() {
+    if (this.correcting || this.current === this.index) return;
+    this.correcting = true;
+    history.go(this.index - this.current);
+  }
+
   /** In-app navigation (links and navigate()). */
   navigate = (to: string) => {
     const hash = to.startsWith('#') ? to : `#${to}`;
-    if (hash === this.committed) return;
+    if (hash === this.committed || this.deciding) return;
     this.attempt(hash, () => {
       this.index++;
+      this.current = this.index;
       history.pushState({ planbIndex: this.index }, '', hash);
       this.commit(hash);
     });
-  };
-
-  /** Drops an approved Back/Forward that has not landed: the page on screen stays. */
-  private abandonApproval = () => {
-    const a = this.approving;
-    this.approving = null;
-    a?.fail();
   };
 
   private onClick = (e: MouseEvent) => {
@@ -269,51 +271,45 @@ export class HistoryNav {
     let idx = st?.planbIndex;
     if (typeof idx !== 'number') {
       // A new entry made outside the router (typed address, location.hash = …): number it.
-      idx = this.index + 1;
+      idx = this.current + 1;
       history.replaceState({ ...(st ?? {}), planbIndex: idx }, '', location.href);
     }
     const hash = location.hash || '#/';
+    this.current = idx;
     const correction = this.correcting;
     this.correcting = false;
-    if (this.approving) {
-      const target = this.approving;
-      if (idx === target.index && hash === target.hash) {
-        this.approving = null;
-        // Arrived. Only now does the page change, and only if nothing took over the page meanwhile.
-        if (!this.deps.locked() && target.arrive()) {
-          this.index = idx;
-          this.commit(hash);
-        } else {
-          target.fail();
-          this.restore(idx);
-        }
-        return;
-      }
-      // Our correction landing first is expected; anything else interrupts the approved move.
-      if (idx === this.index && correction) return;
-      this.abandonApproval();
-    }
-    if (idx === this.index) return; // back on the entry that is shown (e.g. a correction landing)
-    const delta = idx - this.index;
-    const from = parseRoute(this.committed);
-    const to = parseRoute(hash);
+    // While a move is being decided the browser may be moved on; that is settled when it is decided.
+    if (this.deciding) return;
+    if (idx === this.index) return; // on the entry that is shown (e.g. a correction landing)
+    const scope = navScope(parseRoute(this.committed), parseRoute(hash));
     const owned = this.deps.locked() || this.deps.guard.busy;
-    // Clean, and nobody else owns the page: move at once, no flicker.
-    if (!owned && !correction && this.deps.guard.isClean(navScope(from, to))) {
+    // Clean, and nobody else owns the page: move at once.
+    if (!owned && !correction && this.deps.guard.isClean(scope)) {
       this.index = idx;
       this.commit(hash);
       return;
     }
-    // Put the address back on the page still shown, then decide (or just stay, if owned).
-    this.restore(idx);
-    if (owned || correction) return;
+    // Owned by another flow, or the user moved while we were correcting: back to the page shown.
+    if (owned || correction) return this.restore();
+    const target = { index: idx, hash };
+    this.deciding = target;
     void this.deps.guard.decide(
-      navScope(from, to),
+      scope,
       (arrive, fail) => {
-        this.approving = { index: this.index + delta, hash, arrive, fail };
-        history.go(delta);
+        this.deciding = null;
+        // Only if the browser is still on the approved entry and nobody else took the page.
+        if (this.current !== target.index || this.deps.locked()) {
+          fail();
+          return this.restore();
+        }
+        if (!arrive()) return this.restore();
+        this.index = target.index;
+        this.commit(target.hash);
       },
-      () => undefined,
+      () => {
+        this.deciding = null;
+        this.restore();
+      },
     );
   };
 

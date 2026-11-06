@@ -22,7 +22,7 @@ test('phone: leaving with an edit that cannot be saved asks; Stay keeps it; Leav
   expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
   await leave.getByRole('button', { name: 'Stay' }).tap();
   await expect(page.getByLabel('Episode title')).toHaveValue('Unsaved on the phone');
-  expect(page.url()).toContain(`#/e/${id}`);
+  await expect.poll(() => page.url()).toContain(`#/e/${id}`);
 
   await toList();
   await leave.getByRole('button', { name: 'Leave without saving…' }).tap();

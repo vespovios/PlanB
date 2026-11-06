@@ -8,6 +8,8 @@ const BASE = 'http://planb.test/';
 class FakeBrowser {
   entries: { url: string; state: unknown }[] = [{ url: `${BASE}#/`, state: null }];
   i = 0;
+  /** Traversals that actually moved (ours and the user's). */
+  moves = 0;
   private queue: (() => void)[] = [];
   window = new EventTarget();
   document = new EventTarget();
@@ -32,6 +34,7 @@ class FakeBrowser {
         const t = this.i + n;
         if (n === 0 || t < 0 || t >= this.entries.length) return;
         this.i = t;
+        this.moves++;
         this.window.dispatchEvent(new Event('popstate'));
       });
       if (this.queue.length === 1) setTimeout(() => this.drain(), 0);
@@ -111,7 +114,7 @@ describe('guarded hash history', () => {
     expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
   });
 
-  it('Back with unsaved work: the address is put back, the page stays, history is unchanged', async () => {
+  it('Back with unsaved work: the page stays while deciding; Stay restores the address; history is unchanged', async () => {
     const { p, guard, nav } = setup();
     nav.navigate('#/e/ep_a/plan');
     p.list = [issue('offline')];
@@ -119,43 +122,41 @@ describe('guarded hash history', () => {
     await browser.settle();
     expect(guard.getSnapshot().step).toBe('blocked');
     expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
-    consistent(nav);
-    expect(browser.history.length).toBe(2);
     guard.stay();
     await browser.settle();
     consistent(nav);
+    expect(browser.i).toBe(1);
+    expect(browser.history.length).toBe(2);
   });
 
-  it('an approved Back completes only when it lands: discards then, and the page changes then', async () => {
+  it('an approved Back shows the page the browser is already on, and discards only then', async () => {
     const { c, p, guard, nav } = setup();
     nav.navigate('#/e/ep_a/plan');
     p.list = [issue('offline')];
     browser.back();
     await browser.settle();
     guard.askDiscard();
-    guard.confirmDiscard();
-    // Not yet arrived: still on the page, frozen, nothing discarded.
-    expect(guard.getSnapshot()).toEqual({ step: 'moving' });
-    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
-    expect(p.discard).not.toHaveBeenCalled();
     expect(c.isFrozen).toBe(true);
-    await browser.settle();
+    expect(p.discard).not.toHaveBeenCalled();
+    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+    guard.confirmDiscard();
     expect(nav.getSnapshot()).toBe('#/');
-    consistent(nav);
     expect(p.discard).toHaveBeenCalledOnce();
     expect(c.isFrozen).toBe(false);
+    await browser.settle();
+    consistent(nav);
     expect(browser.history.length).toBe(2);
   });
 
-  it('if signing in again or sign-out takes the page before the approved Back lands, nothing moves or is discarded', async () => {
+  it('if signing in again or sign-out takes the page before the move is approved, nothing moves or is discarded', async () => {
     const { c, p, guard, nav, lock } = setup();
     nav.navigate('#/e/ep_a/plan');
     p.list = [issue('offline')];
     browser.back();
     await browser.settle();
     guard.askDiscard();
+    lock(true); // e.g. the session was lost while the dialog was open
     guard.confirmDiscard();
-    lock(true); // e.g. the session was lost (App also resets the guard)
     await browser.settle();
     expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
     consistent(nav);
@@ -164,41 +165,21 @@ describe('guarded hash history', () => {
     expect(c.isFrozen).toBe(false);
   });
 
-  it('a guard reset (session lost) before the approved Back lands also keeps the page', async () => {
-    const { p, guard, nav } = setup();
-    nav.navigate('#/e/ep_a/plan');
-    p.list = [issue('offline')];
-    browser.back();
-    await browser.settle();
-    guard.askDiscard();
-    guard.confirmDiscard();
-    guard.reset();
-    await browser.settle();
-    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
-    consistent(nav);
-    expect(p.discard).not.toHaveBeenCalled();
-  });
-
-  it('Back/Forward pressed while a move is decided or replayed never leaves page and address apart', async () => {
+  it('Back/Forward pressed while deciding never leaves page and address apart once decided', async () => {
     const { p, guard, nav } = setup();
     nav.navigate('#/settings');
     nav.navigate('#/e/ep_a/plan');
     p.list = [issue('offline')];
-    // Several presses while deciding.
     browser.back();
     browser.back();
     browser.forward();
     await browser.settle();
     expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
-    consistent(nav);
     expect(guard.getSnapshot().step).toBe('blocked');
-    // Approve, and press Back again before the replay lands.
-    guard.askDiscard();
-    guard.confirmDiscard();
-    browser.back();
-    browser.forward();
+    guard.stay();
     await browser.settle();
     consistent(nav);
+    expect(browser.i).toBe(2);
     expect(guard.busy).toBe(false);
   });
 
@@ -230,5 +211,74 @@ describe('guarded hash history', () => {
     consistent(nav);
     nav.navigate('#/settings');
     expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+  });
+});
+
+describe('exact history positions', () => {
+  /** History: #/ (0) → #/settings (1) → plan (2), with unsaved work on the plan. */
+  async function onDirtyPlan() {
+    const ctx = setup();
+    ctx.nav.navigate('#/settings');
+    ctx.nav.navigate('#/e/ep_a/plan');
+    ctx.p.list = [issue('offline')];
+    return ctx;
+  }
+
+  it('an approved Back ends exactly on its target with no further traversal of ours', async () => {
+    const { guard, nav } = await onDirtyPlan();
+    browser.back();
+    await browser.settle();
+    expect(guard.getSnapshot().step).toBe('blocked');
+    const moves = browser.moves;
+    guard.askDiscard();
+    guard.confirmDiscard();
+    await browser.settle();
+    expect(nav.getSnapshot()).toBe('#/settings');
+    expect(browser.i).toBe(1);
+    expect(browser.entries).toHaveLength(3);
+    expect(browser.moves).toBe(moves); // approving needed no traversal
+  });
+
+  it('Stay ends exactly on the source, even if the user presses Back while it is being restored', async () => {
+    const { guard, nav } = await onDirtyPlan();
+    browser.back();
+    await browser.settle();
+    guard.stay();
+    browser.back(); // competes with the restoring traversal
+    await browser.settle();
+    // Still unsaved, so that Back asks again (the address is on the page being decided about).
+    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+    guard.stay();
+    await browser.settle();
+    expect(browser.i).toBe(2);
+    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+    expect(browser.entries).toHaveLength(3);
+  });
+
+  it('Back pressed while deciding, then approving: the move is cancelled and the source restored exactly', async () => {
+    const { p, guard, nav } = await onDirtyPlan();
+    browser.back();
+    await browser.settle();
+    browser.back(); // moves the browser on while the dialog is open
+    await browser.settle();
+    guard.askDiscard();
+    guard.confirmDiscard();
+    await browser.settle();
+    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+    expect(browser.i).toBe(2);
+    expect(p.discard).not.toHaveBeenCalled();
+    expect(guard.busy).toBe(false);
+  });
+
+  it('the session lost while deciding: the source is restored exactly and nothing is discarded', async () => {
+    const { p, guard, nav, lock } = await onDirtyPlan();
+    browser.back();
+    await browser.settle();
+    lock(true);
+    guard.reset();
+    await browser.settle();
+    expect(nav.getSnapshot()).toBe('#/e/ep_a/plan');
+    expect(browser.i).toBe(2);
+    expect(p.discard).not.toHaveBeenCalled();
   });
 });

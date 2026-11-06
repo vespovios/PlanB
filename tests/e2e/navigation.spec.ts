@@ -10,7 +10,8 @@ const confirmLeave = (page: Page) => page.getByRole('dialog', { name: 'Leave wit
 const onList = (page: Page) => expect(page.getByRole('heading', { name: 'Episodes', level: 1 })).toBeVisible();
 const onPlan = async (page: Page, id: string) => {
   await expect(page.getByLabel('What happens')).toBeVisible();
-  expect(page.url()).toContain(`#/e/${id}/plan`);
+  // After Stay the address is restored by one history step.
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/plan`);
 };
 async function start(page: Page, title: string) {
   await login(page);
@@ -186,7 +187,7 @@ test('rapid Back presses and a scripted address change ask once; Stay keeps the 
   await expect(leave(page)).toHaveCount(1);
   await leave(page).getByRole('button', { name: 'Stay' }).click();
   await expect(page.getByLabel('Episode title')).toHaveValue('Nav rapid back');
-  expect(page.url()).toContain(`#/e/${id}`);
+  await expect.poll(() => page.url()).toContain(`#/e/${id}`);
 
   // An address changed by script (or typed): the same question; Stay puts it back.
   await page.evaluate(() => (location.hash = '#/settings'));
@@ -431,7 +432,7 @@ test('a drawing inside the Plan tab: Back to another tab asks; discard closes it
   await expect(leave(page)).toContainText('The drawing for');
   await leave(page).getByRole('button', { name: 'Stay' }).click();
   await expect(page.locator('.sb-foot')).toContainText('1 object');
-  expect(page.url()).toContain(`#/e/${id}/plan`);
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/plan`);
   await page.goBack();
   await leave(page).getByRole('button', { name: 'Leave without saving…' }).click();
   await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
