@@ -172,16 +172,14 @@ export class SaveCoordinator {
     this.participants.forEach((p) => p.retryHeld());
   }
 
-  /**
-   * Explicit discard (only after the user confirmed it): drops every unsaved edit, conflict, report
-   * and draft, including drafts' local copies. Requests already sent are not recalled.
-   * Returns the drafts whose copy in this browser could not be confirmed deleted.
-   */
-  discardAll(): string[] {
-    [...this.participants].forEach((p) => p.discard());
-    this.participants.clear();
+  /** Explicit discard of unsaved editor input only (engines untouched). Returns copies not deleted. */
+  discardDrafts(): string[] {
     const drafts = [...this.drafts.values()];
     this.drafts.clear();
+    return this.runDiscards(drafts);
+  }
+
+  private runDiscards(drafts: { label: string; discard?: () => boolean | void }[]) {
     const notDeleted: string[] = [];
     for (const d of drafts) {
       let ok: boolean | void = false;
@@ -193,6 +191,19 @@ export class SaveCoordinator {
       if (ok === false) notDeleted.push(d.label);
     }
     return notDeleted;
+  }
+
+  /**
+   * Explicit discard (only after the user confirmed it): drops every unsaved edit, conflict, report
+   * and draft, including drafts' local copies. Requests already sent are not recalled.
+   * Returns the drafts whose copy in this browser could not be confirmed deleted.
+   */
+  discardAll(): string[] {
+    [...this.participants].forEach((p) => p.discard());
+    this.participants.clear();
+    const drafts = [...this.drafts.values()];
+    this.drafts.clear();
+    return this.runDiscards(drafts);
   }
 
   /**

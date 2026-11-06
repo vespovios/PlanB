@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 export const EPISODE_TABS = ['overview', 'plan', 'shots', 'storyboard', 'kit', 'notes'] as const;
 export type EpisodeTab = (typeof EPISODE_TABS)[number];
@@ -35,16 +35,32 @@ export const href = {
   settings: () => '#/settings',
 };
 
-export function navigate(to: string) {
-  window.location.hash = to.replace(/^#/, '');
+/** The app's guarded history (navigation.ts), once installed; until then plain hash changes. */
+interface Navigator {
+  navigate: (to: string) => void;
+  subscribe: (fn: () => void) => () => void;
+  getSnapshot: () => string;
+}
+let installed: Navigator | null = null;
+export function installNavigator(n: Navigator | null) {
+  installed = n;
 }
 
-export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parseRoute(window.location.hash));
+export function navigate(to: string) {
+  if (installed) installed.navigate(to);
+  else window.location.hash = to.replace(/^#/, '');
+}
+
+const noSubscribe = () => () => undefined;
+/** The route on screen: with the guarded history it changes only once a move is approved. */
+export function useRoute(nav: Navigator | null = installed): Route {
+  const [plain, setPlain] = useState(() => window.location.hash);
   useEffect(() => {
-    const on = () => setRoute(parseRoute(window.location.hash));
+    if (nav) return;
+    const on = () => setPlain(window.location.hash);
     window.addEventListener('hashchange', on);
     return () => window.removeEventListener('hashchange', on);
-  }, []);
-  return route;
+  }, [nav]);
+  const guarded = useSyncExternalStore(nav?.subscribe ?? noSubscribe, nav?.getSnapshot ?? (() => plain));
+  return parseRoute(nav ? guarded : plain);
 }
