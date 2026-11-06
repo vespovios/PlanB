@@ -30,3 +30,28 @@ test('phone: leaving with an edit that cannot be saved asks; Stay keeps it; Leav
   await expect(page.getByRole('heading', { name: 'Episodes', level: 1 })).toBeVisible();
   expect((await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode.title).toBe('Phone nav guard');
 });
+
+test('phone: closing the scene sheet with a typed shot asks; Stay keeps it; discard drops only it, edits stay saved', async ({ page }) => {
+  await login(page);
+  const id = await createEpisode(page, 'Phone sheet guard');
+  await waitSaved(page);
+  await page.locator('.cards .card-main').first().tap();
+  const sheet = page.getByRole('dialog', { name: /^Scene:/ });
+  await sheet.getByLabel('What happens').fill('Edited in the sheet');
+  await sheet.getByLabel('New shot description').fill('Typed in the sheet');
+  await sheet.getByRole('button', { name: '← Scenes' }).tap();
+  const sceneLeave = page.getByRole('dialog', { name: 'Leave this scene?' });
+  await expect(sceneLeave).toContainText('A new shot typed');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).tap();
+  await expect(sheet.getByLabel('New shot description')).toHaveValue('Typed in the sheet');
+  await sheet.getByRole('button', { name: '← Scenes' }).tap();
+  await sceneLeave.getByRole('button', { name: 'Leave without saving…' }).tap();
+  await page.getByRole('dialog', { name: 'Leave without saving?' }).getByRole('button', { name: 'Discard and leave' }).tap();
+  await expect(sheet).toHaveCount(0);
+  await page.locator('.cards .card-main').first().tap();
+  await expect(sheet.getByLabel('New shot description')).toHaveValue('');
+  await waitSaved(page);
+  const ep = (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode;
+  expect(ep.scenes[0].description).toBe('Edited in the sheet');
+  expect(ep.scenes[0].shots.some((s: { description: string }) => s.description === 'Typed in the sheet')).toBe(false);
+});

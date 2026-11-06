@@ -1,7 +1,7 @@
 // Guarded navigation (stage 4): leaving a page never silently drops work. Checked against server data,
 // the address bar and the page actually shown.
 import { expect, test, type Page } from '@playwright/test';
-import { apiAsAgent, CREATOR, createEpisode, login, waitSaved } from './helpers';
+import { apiAsAgent, CREATOR, createEpisode, login, samplePngFile, waitSaved } from './helpers';
 
 const episode = async (page: Page, id: string) => (await apiAsAgent(page, 'GET', `/api/episodes/${id}`)).body.episode;
 const rail = (page: Page, name: string) => page.locator('.rail').getByRole('link', { name, exact: true });
@@ -338,3 +338,111 @@ test('a clean move stays instant and adds one history entry', async ({ page }) =
   await expect(leave(page)).toHaveCount(0);
 });
 
+
+const draftCopies = (page: Page) => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('planb:storyboard-draft:')));
+async function scribble(page: Page) {
+  const box = (await page.locator('.sb-canvas').boundingBox())!;
+  await page.mouse.move(box.x + 80, box.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 220, box.y + 160, { steps: 4 });
+  await page.mouse.up();
+}
+
+test('switching scenes with a link being added asks; Stay keeps it on its scene; discard drops only it', async ({ page }) => {
+  const { id, original } = await start(page, 'Nav scene link');
+  await page.getByRole('button', { name: '+ References' }).click();
+  await page.getByRole('button', { name: '+ Link' }).click();
+  await page.getByLabel('Link label').fill('Route map for scene one');
+  await page.getByLabel('What happens').fill('Scene one edit (saved normally)');
+  await page.locator('.timeline-track .block').nth(1).click();
+  const sceneLeave = page.getByRole('dialog', { name: 'Leave this scene?' });
+  await expect(sceneLeave).toContainText('A link being added');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.getByLabel('Link label')).toHaveValue('Route map for scene one');
+  await expect(page.getByLabel('Scene title')).toHaveValue(original.scenes[0].title);
+  await page.locator('.timeline-track .block').nth(1).click();
+  await sceneLeave.getByRole('button', { name: 'Leave without saving…' }).click();
+  await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
+  await expect(page.getByLabel('Scene title')).toHaveValue(original.scenes[1].title);
+  // The link was not moved to this scene, and is gone from the first one.
+  await expect(page.getByLabel('Link label')).toHaveCount(0);
+  await page.locator('.timeline-track .block').nth(0).click();
+  await expect(page.getByLabel('Link label')).toHaveCount(0);
+  await waitSaved(page);
+  const ep = await episode(page, id);
+  expect(ep.scenes[0].description).toBe('Scene one edit (saved normally)');
+  expect(ep.scenes.flatMap((s: { attachments: unknown[] }) => s.attachments)).toHaveLength(0);
+});
+
+test('a skip reason being typed asks before another scene is chosen', async ({ page }) => {
+  const { original } = await start(page, 'Nav scene skip');
+  const shot = original.scenes[0].shots[0].description as string;
+  const pattern = new RegExp(shot.slice(0, 12).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  await page.getByRole('radiogroup', { name: new RegExp(`^Outcome: .*${pattern.source}`) }).first().getByRole('radio', { name: 'Skipped', exact: true }).click();
+  await page.getByLabel('Other reason').first().fill('Too windy on the pass');
+  await page.locator('.timeline-track .block').nth(1).click();
+  const sceneLeave = page.getByRole('dialog', { name: 'Leave this scene?' });
+  await expect(sceneLeave).toContainText('A skip reason typed');
+  await sceneLeave.getByRole('button', { name: 'Stay' }).click();
+  await expect(page.getByLabel('Other reason').first()).toHaveValue('Too windy on the pass');
+});
+
+test('an open episode-level drawing survives tab changes by Back/Forward and keeps its browser copy; a delayed upload stays safe', async ({ page }) => {
+  const { id } = await start(page, 'Nav drawing tabs');
+  await rail(page, 'Storyboard').click();
+  await page.getByRole('button', { name: /Draw storyboard for/ }).first().click();
+  await scribble(page);
+  await expect.poll(() => draftCopies(page)).toHaveLength(1);
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/episodes/*/assets', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.locator('.sb-toolbar input[type=file]').setInputFiles(await samplePngFile());
+  await page.goBack(); // to the Plan tab of the same episode: the drawing editor is not part of the tab
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/plan`);
+  await expect(leave(page)).toHaveCount(0);
+  await expect(page.locator('.sb-foot')).toContainText('1 object');
+  release();
+  await expect(page.locator('#sb-bg')).not.toHaveValue('', { timeout: 10_000 });
+  await page.goForward();
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/storyboard`);
+  await scribble(page);
+  await expect(page.locator('.sb-foot')).toContainText('2 objects');
+  await page.waitForTimeout(500);
+  const copy = await page.evaluate((k) => JSON.parse(localStorage.getItem(k)!), (await draftCopies(page))[0]);
+  expect(copy.doc.objects).toHaveLength(2);
+  await page.locator('.sb-head').getByRole('button', { name: 'Save' }).click();
+  await expect(page.locator('.sb-overlay')).toHaveCount(0, { timeout: 10_000 });
+  const sb = (await episode(page, id)).scenes[0].storyboard;
+  expect(sb.objects).toHaveLength(2);
+  expect(sb.backgroundAttachmentId).toMatch(/^at_/);
+});
+
+test('a drawing inside the Plan tab: Back to another tab asks; discard closes it and deletes its copy; a new drawing persists again', async ({ page }) => {
+  const { id } = await start(page, 'Nav drawing discard');
+  await page.goto(`/#/e/${id}/shots`);
+  await page.goto(`/#/e/${id}/plan`);
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  await scribble(page);
+  await expect.poll(() => draftCopies(page)).toHaveLength(1);
+  await page.goBack();
+  await expect(leave(page)).toContainText('The drawing for');
+  await leave(page).getByRole('button', { name: 'Stay' }).click();
+  await expect(page.locator('.sb-foot')).toContainText('1 object');
+  expect(page.url()).toContain(`#/e/${id}/plan`);
+  await page.goBack();
+  await leave(page).getByRole('button', { name: 'Leave without saving…' }).click();
+  await confirmLeave(page).getByRole('button', { name: 'Discard and leave' }).click();
+  await expect.poll(() => page.url()).toContain(`#/e/${id}/shots`);
+  await expect(page.locator('.sb-overlay')).toHaveCount(0);
+  expect(await draftCopies(page)).toHaveLength(0);
+  expect((await episode(page, id)).scenes[0].storyboard ?? null).toBeNull();
+  // A new drawing keeps its copy as usual.
+  await page.goForward();
+  await expect(page.getByRole('button', { name: '✎ Draw / Storyboard' })).toBeVisible();
+  await page.getByRole('button', { name: '✎ Draw / Storyboard' }).click();
+  await scribble(page);
+  await expect.poll(() => draftCopies(page)).toHaveLength(1);
+});
