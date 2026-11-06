@@ -20,6 +20,8 @@ const config = loadConfig({
 const app = await buildApp(config);
 await app.services.auth.createUser('creator@example.com', 'Creator', 'creator-password-1');
 await app.services.auth.createUser('someone@example.com', 'Someone', 'someone-password-1');
+// Only for the password-change expiry test, so other tests keep their passwords.
+await app.services.auth.createUser('expiry@example.com', 'Expiry', 'expiry-password-1');
 const token = app.services.auth.createAgentToken(app.services.auth.findUserByEmail('creator@example.com')!.id, 'E2E agent');
 fs.writeFileSync(path.join(os.tmpdir(), 'planb-e2e-token'), token.token);
 await app.listen({ host: config.host, port });
