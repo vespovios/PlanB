@@ -7,6 +7,7 @@ import { randomId } from '../shared/ids';
 import type { Episode, EpisodeDoc, Scene } from '../shared/model';
 import { applyOperations, type ApplyContext, type Operation } from '../shared/ops';
 import { api, ApiError } from './api';
+import { saves, type SaveIssue, type SaveIssueKind, type SaveParticipant } from './saves';
 
 type FieldOp = Extract<Operation, { op: 'updateEpisode' | 'updateScene' | 'updateShot' | 'updateAttachment' | 'updateGear' }>;
 interface Pending {
@@ -14,7 +15,32 @@ interface Pending {
   key?: string;
   /** Field values this edit started from, for detecting edits made elsewhere. */
   base?: Record<string, unknown>;
+  /** Sent at least once without a definite answer: the server may already have applied it. */
+  unconfirmed?: boolean;
 }
+
+/** Edits dropped by the engine, kept for the coordinator until the user dismisses the message. */
+interface Dropped {
+  outcome: 'rejected' | 'uncertain';
+  source: 'error' | 'notice' | 'direct';
+  count: number;
+  message: string;
+}
+
+/** No definite answer: the request may have been applied (lost response, proxy or server error). */
+const ambiguous = (e: unknown) => !(e instanceof ApiError) || e.offline || e.status >= 500;
+
+const frozenError = () =>
+  new ApiError(423, 'Saving is paused right now. This change was not sent; it is still here.', { code: 'writes_frozen' });
+
+type QueuedKind = Extract<SaveIssueKind, 'queued' | 'held' | 'offline' | 'auth' | 'server'>;
+const queuedMessages: Record<QueuedKind, string> = {
+  queued: 'Edits are waiting to be sent.',
+  held: 'Edits are kept on this page while saving is paused.',
+  offline: 'Edits are kept on this page until the connection returns.',
+  auth: 'Edits are kept on this page; the server signed you out.',
+  server: 'Edits are kept on this page after a server error.',
+};
 
 export type SaveState = 'loading' | 'saved' | 'pending' | 'saving' | 'offline' | 'error';
 
@@ -79,7 +105,7 @@ function fieldLabel(op: FieldOp, field: string, doc: EpisodeDoc): string {
   return `${scene ? `"${scene.title}"` : 'Scene'}${op.op === 'updateShot' ? ' shot' : op.op === 'updateAttachment' ? ' reference' : ''} ${f}`;
 }
 
-export class EpisodeSync {
+export class EpisodeSync implements SaveParticipant {
   private server: Episode | null = null;
   private queued: Pending[] = [];
   private inflight: Pending[] = [];
@@ -105,6 +131,11 @@ export class EpisodeSync {
   /** Copies of scenes deleted in this session, so "Undo" can show them immediately. */
   private deletedScenes = new Map<string, Scene>();
   private assetMeta = new Map<string, { mime: 'image/png' | 'image/jpeg'; bytes: number; width: number; height: number }>();
+  /** Why queued edits are held for Retry (state 'error'). */
+  private failure: 'auth' | 'server' | null = null;
+  private dropped: Dropped[] = [];
+  /** Direct saves (commitNow, uploads, restores) still running. */
+  private active = new Set<Promise<unknown>>();
 
   constructor(public readonly id: string) {
     this.snap = this.makeSnapshot();
@@ -121,6 +152,7 @@ export class EpisodeSync {
   private emit() {
     this.snap = this.makeSnapshot();
     this.listeners.forEach((fn) => fn());
+    this.releaseIfDone();
   }
 
   private makeSnapshot(): SyncSnapshot {
@@ -162,6 +194,7 @@ export class EpisodeSync {
 
   start() {
     this.stopped = false;
+    saves.register(this);
     void this.load();
     this.connectEvents();
     window.addEventListener('beforeunload', this.beforeUnload);
@@ -180,6 +213,17 @@ export class EpisodeSync {
     document.removeEventListener('visibilitychange', this.onVisible);
     // Best effort: send anything still waiting.
     if (this.queued.length && this.server && !this.sending) void this.flush();
+    // Unsaved work stays registered with the coordinator until it is resolved.
+    this.releaseIfDone();
+  }
+
+  /** Nothing outstanding: no edits, no requests, no unacknowledged dropped edits. */
+  private get idle() {
+    return !this.hasUnsaved && !this.sending && !this.active.size && !this.dropped.length;
+  }
+
+  private releaseIfDone() {
+    if (this.stopped && this.idle) saves.unregister(this);
   }
 
   get hasUnsaved() {
@@ -296,12 +340,14 @@ export class EpisodeSync {
 
   private schedule(ms: number) {
     clearTimeout(this.timer);
+    if (saves.isFrozen) return;
     this.timer = setTimeout(() => void this.flush(), ms);
   }
 
-  /** Save queued edits now (e.g. on blur). */
+  /** Save queued edits now (e.g. on blur). Resolves whatever the outcome; see issues(). */
   flush(): Promise<void> {
     clearTimeout(this.timer);
+    if (saves.isFrozen) return Promise.resolve();
     return this.exclusive(() => this.flushInner()) as Promise<void>;
   }
 
@@ -336,6 +382,7 @@ export class EpisodeSync {
       }
       this.inflight = [];
       this.retryDelay = 2000;
+      this.failure = null;
       if (!this.stickyError) this.error = null;
       this.state = this.queued.length ? 'pending' : 'saved';
     } catch (e) {
@@ -351,12 +398,15 @@ export class EpisodeSync {
           this.setOffline((e2 as Error).message);
         }
       } else if (err.offline || err.status >= 500 || err.status === 401) {
+        if (ambiguous(err)) for (const p of failed) p.unconfirmed = true;
         this.queued = [...failed, ...this.queued];
         if (err.status === 401) {
+          this.failure = 'auth';
           this.state = 'error';
           this.error = 'You were signed out. Your edits are kept here; sign in again in another tab, then press Retry.';
         } else if (err.status >= 500) {
           // A server error is not retried automatically; the edits stay here until Retry.
+          this.failure = 'server';
           this.state = 'error';
           this.error = `${err.message} Your edits are kept on this page; press Retry.`;
         } else this.setOffline(err.message);
@@ -365,6 +415,7 @@ export class EpisodeSync {
         this.state = this.queued.length ? 'pending' : 'error';
         this.error = `Not saved: ${err.message}`;
         this.stickyError = true;
+        this.recordDropped(failed, 'error', `Not saved: ${err.message}`);
       }
     } finally {
       this.sending = false;
@@ -388,6 +439,7 @@ export class EpisodeSync {
 
   retry() {
     this.retryDelay = 2000;
+    this.failure = null;
     this.stickyError = false;
     if (this.state === 'error') this.state = 'pending';
     this.error = null;
@@ -398,13 +450,32 @@ export class EpisodeSync {
   dismissError() {
     this.error = null;
     this.stickyError = false;
+    this.dropped = this.dropped.filter((d) => d.source !== 'error');
     if (this.state === 'error') this.state = this.queued.length ? 'pending' : 'saved';
     this.emit();
   }
 
   dismissNotice() {
     this.notice = null;
+    this.dropped = this.dropped.filter((d) => d.source !== 'notice');
     this.emit();
+  }
+
+  /** The user has seen every report of dropped or possibly-unsaved edits (e.g. in a sign-out dialog). */
+  acknowledgeDropped() {
+    this.dropped = [];
+    this.emit();
+  }
+
+  /**
+   * Records edits that were dropped. If any of them had been sent without a definite answer they
+   * may already be saved, so they are reported as uncertain rather than as refused: an "ID already
+   * in use" or "not found" on replay does not prove the earlier attempt succeeded.
+   */
+  private recordDropped(items: Pending[], source: Dropped['source'], message: string) {
+    const uncertain = items.filter((p) => p.unconfirmed).length;
+    if (uncertain) this.dropped.push({ outcome: 'uncertain', source, count: uncertain, message: `May or may not have been saved. ${message}` });
+    if (items.length - uncertain) this.dropped.push({ outcome: 'rejected', source, count: items.length - uncertain, message });
   }
 
   /** Re-applies queued edits on a newer revision, separating real conflicts. */
@@ -416,16 +487,19 @@ export class EpisodeSync {
       if (prev && isFieldOp(prev.op) && isFieldOp(p.op)) {
         for (const f of Object.keys(p.op.fields)) if (!(f in prev.base!)) prev.base![f] = p.base![f];
         Object.assign(prev.op.fields, p.op.fields);
+        if (p.unconfirmed) prev.unconfirmed = true;
       } else merged.push(p);
     }
     const keep: Pending[] = [];
     const dropped: string[] = [];
+    const droppedItems: Pending[] = [];
     let doc: EpisodeDoc = latest;
     for (const p of merged) {
       if (isFieldOp(p.op)) {
         const now = target(doc, p.op);
         if (!now) {
           dropped.push(fieldLabel(p.op, Object.keys(p.op.fields)[0], this.server ?? latest));
+          droppedItems.push(p);
           continue;
         }
         const clash = Object.keys(p.op.fields).filter((f) => !same(now[f], p.base![f]) && !same(now[f], (p.op as FieldOp).fields[f as never]));
@@ -446,11 +520,15 @@ export class EpisodeSync {
         keep.push(p);
       } catch (e) {
         dropped.push((e as Error).message);
+        droppedItems.push(p);
       }
     }
     this.server = latest;
     this.queued = keep;
-    if (dropped.length) this.notice = `Some edits could not be applied to the newer version and were discarded: ${dropped.join('; ')}`;
+    if (dropped.length) {
+      this.notice = `Some edits could not be applied to the newer version and were discarded: ${dropped.join('; ')}`;
+      this.recordDropped(droppedItems, 'notice', this.notice);
+    }
     this.state = keep.length ? 'pending' : this.conflicted.length ? 'pending' : 'saved';
     if (!this.stickyError) this.error = null;
     this.emit();
@@ -479,41 +557,131 @@ export class EpisodeSync {
    * restores, where the result must be confirmed before the UI moves on). Throws ApiError.
    */
   commitNow(operations: Operation[], summary?: string) {
-    clearTimeout(this.timer);
-    return this.exclusive(async () => {
-      await this.flushInner();
-      if (this.queued.length || this.conflicted.length) {
-        throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
-      }
-      try {
-        const res = await api.changes(this.id, this.server!.revision, operations, summary);
-        this.server = res.episode;
-        this.state = this.queued.length ? 'pending' : 'saved';
-        if (!this.stickyError) this.error = null;
-        this.emit();
-        return res;
-      } catch (e) {
-        const err = e as ApiError;
-        if (err.status === 409) {
-          try {
-            this.rebase((await api.episode(this.id)).episode);
-          } catch {
-            /* keep current */
-          }
+    return this.track(() => {
+      clearTimeout(this.timer);
+      return this.exclusive(async () => {
+        await this.flushInner();
+        if (this.queued.length || this.conflicted.length) {
+          throw new ApiError(409, 'Other edits are still waiting to be saved. Resolve them, then try again.', { code: 'pending_edits' });
         }
-        throw err;
-      }
+        try {
+          const res = await api.changes(this.id, this.server!.revision, operations, summary);
+          this.server = res.episode;
+          this.state = this.queued.length ? 'pending' : 'saved';
+          if (!this.stickyError) this.error = null;
+          this.emit();
+          return res;
+        } catch (e) {
+          const err = e as ApiError;
+          if (ambiguous(err)) this.recordDirect(summary ?? 'A change', operations.length);
+          if (err.status === 409) {
+            try {
+              this.rebase((await api.episode(this.id)).episode);
+            } catch {
+              /* keep current */
+            }
+          }
+          throw err;
+        }
+      });
     });
+  }
+
+  /** Restores a revision (History), in turn with other saves. Throws ApiError. */
+  restore(targetRevision: number, baseRevision: number, acknowledgeLaterRevisions = false) {
+    return this.track(() =>
+      this.exclusive(async () => {
+        try {
+          const { episode } = await api.restore(this.id, targetRevision, baseRevision, acknowledgeLaterRevisions);
+          this.adopt(episode);
+          return episode;
+        } catch (e) {
+          if (ambiguous(e)) this.recordDirect(`Restoring revision ${targetRevision}`, 1);
+          throw e;
+        }
+      }),
+    );
+  }
+
+  /**
+   * Runs a save made outside the queue (e.g. upload then link) so the coordinator can wait for it.
+   * Refused while writes are frozen.
+   */
+  async track<T>(fn: () => Promise<T>): Promise<T> {
+    if (saves.isFrozen) throw frozenError();
+    const run = fn();
+    this.active.add(run);
+    try {
+      return await run;
+    } finally {
+      this.active.delete(run);
+      this.releaseIfDone();
+    }
+  }
+
+  private recordDirect(label: string, count: number) {
+    this.dropped.push({ outcome: 'uncertain', source: 'direct', count, message: `${label}: no answer from the server, so it may or may not have been saved.` });
+    this.emit();
   }
 
   /** Replace the confirmed state after a restore or other direct server call. */
   adopt(episode: Episode) {
+    if (this.queued.length || this.conflicted.length) {
+      // Edits made meanwhile are replayed on the new version (or shown as conflicts), never discarded silently.
+      this.queued = [...this.conflicted, ...this.queued];
+      this.conflicted = [];
+      this.conflictInfo = null;
+      this.rebase(episode);
+      return;
+    }
     this.server = episode;
-    this.queued = [];
-    this.conflicted = [];
-    this.conflictInfo = null;
     this.state = 'saved';
     this.emit();
+  }
+
+  // --- Save coordinator ----------------------------------------------------------------
+
+  /** Outstanding work for the coordinator's report. */
+  issues(): SaveIssue[] {
+    const out: SaveIssue[] = [];
+    const add = (outcome: SaveIssue['outcome'], kind: SaveIssueKind, count: number, message: string) => {
+      if (count) out.push({ outcome, kind, episodeId: this.id, count, message });
+    };
+    add('uncertain', 'inflight', this.inflight.length, 'Edits were sent; no answer from the server yet.');
+    add('uncertain', 'direct', this.active.size, 'A drawing, image, link or restore is still being saved.');
+    const held: QueuedKind = this.failure ?? (saves.isFrozen ? 'held' : this.state === 'offline' ? 'offline' : 'queued');
+    add('blocked', held, this.queued.length, queuedMessages[held]);
+    add('blocked', 'conflict', this.conflicted.length, 'Edits need a Keep mine / Use newer choice.');
+    for (const d of this.dropped) add(d.outcome, d.outcome, d.count, d.message);
+    return out;
+  }
+
+  /**
+   * Sends what can be sent and waits for answers until nothing is moving or the deadline passes.
+   * Saves held for Retry (signed out, server error) and conflicts are left for the user; offline
+   * edits get one more attempt. Requests still running at the deadline are not cancelled.
+   */
+  async settle(deadline: number) {
+    const until = <T>(p: Promise<T>) => {
+      let t: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<void>((r) => (t = setTimeout(r, Math.max(0, deadline - Date.now()))));
+      return Promise.race([p, timeout]).finally(() => clearTimeout(t));
+    };
+    let triedOffline = false;
+    while (Date.now() < deadline && !saves.isFrozen) {
+      const sendable = this.server && this.queued.length && this.state !== 'error' && !(this.state === 'offline' && triedOffline);
+      if (sendable) {
+        await until(this.flush());
+        if (this.state === 'offline') triedOffline = true;
+      } else if (this.sending || this.active.size) {
+        await until(Promise.allSettled([this.lock, ...this.active]));
+      } else return;
+    }
+  }
+
+  /** Writes were thawed: send what was held. */
+  resume() {
+    if (this.queued.length && this.state !== 'error') this.schedule(0);
   }
 
   get confirmed() {
