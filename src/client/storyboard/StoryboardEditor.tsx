@@ -15,6 +15,7 @@ import {
 } from '../../shared/storyboard';
 import { ApiError, api, assetUrl } from '../api';
 import type { EpisodeSync } from '../sync';
+import { useUnsavedDraft } from '../saves';
 import { Confirm, capturePointer } from '../components/ui';
 
 type Tool = 'select' | 'freehand' | 'arrow' | 'rect' | 'ellipse' | 'text';
@@ -158,6 +159,8 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
   const fileRef = useRef<HTMLInputElement>(null);
   const images = scene.attachments.filter((a): a is ImageAttachment => a.kind === 'image');
   const dirty = JSON.stringify(doc) !== JSON.stringify(saved);
+  // An open drawing with changes is never saved or discarded automatically; the coordinator only reports it.
+  useUnsavedDraft(`The drawing for "${scene.title}"`, dirty, { episodeId, retained: true });
 
   // Offer to recover a drawing that was not saved (closed tab, failed save, lost connection).
   useEffect(() => {
@@ -389,14 +392,17 @@ export function StoryboardEditor({ scene, engine, episodeId, onClose }: { scene:
     if (file.size > 10 * 1024 * 1024) return setError('Images can be at most 10 MiB.');
     setUploading(true);
     try {
-      const { asset } = await api.upload(episodeId, file, file.name);
-      const id = randomId('at');
-      engine.rememberAsset(asset.id, asset);
-      // The photo is stored as a scene reference so the drawing can point at it.
-      await engine.commitNow(
-        [{ op: 'addImage', sceneId: scene.id, id, assetId: asset.id, label: file.name.replace(/\.[^.]+$/, '').slice(0, 80) }],
-        `Added image reference to "${scene.title}"`,
-      );
+      const id = await engine.track(async () => {
+        const { asset } = await api.upload(episodeId, file, file.name);
+        const id = randomId('at');
+        engine.rememberAsset(asset.id, asset);
+        // The photo is stored as a scene reference so the drawing can point at it.
+        await engine.commitNow(
+          [{ op: 'addImage', sceneId: scene.id, id, assetId: asset.id, label: file.name.replace(/\.[^.]+$/, '').slice(0, 80) }],
+          `Added image reference to "${scene.title}"`,
+        );
+        return id;
+      });
       setDoc((d) => ({ ...d, backgroundAttachmentId: id }));
     } catch (e) {
       setError((e as Error).message);

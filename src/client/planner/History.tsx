@@ -35,8 +35,7 @@ export function HistoryDialog({ episodeId, engine, onClose, onRestored }: { epis
         }
         base = engine.confirmed!.revision;
       }
-      const { episode } = await api.restore(episodeId, target, base, acknowledgedBase !== undefined);
-      engine.adopt(episode);
+      const episode = await engine.restore(target, base, acknowledgedBase !== undefined);
       setPending(null);
       onRestored(`Restored the episode as it was at revision ${target}. This is saved as revision ${episode.revision}; nothing was erased.`);
       void load();

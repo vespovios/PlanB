@@ -20,18 +20,20 @@ export function References({ scene, engine, episodeId }: { scene: Scene; engine:
     if (file.size > LIMITS.imageBytes) return setError(`That image is ${(file.size / 1024 / 1024).toFixed(1)} MiB; the limit is 10 MiB.`);
     setBusy(true);
     try {
-      const { asset } = await api.upload(episodeId, file, file.name);
-      engine.rememberAsset(asset.id, asset);
-      const label = file.name.replace(/\.[^.]+$/, '').slice(0, 80);
-      const attachmentId = randomId('at');
-      await engine.commitNow(
-        [
-          { op: 'addImage', sceneId: scene.id, id: attachmentId, assetId: asset.id, label },
-          // The first image becomes the card thumbnail unless one is already chosen.
-          ...(scene.thumbnailAttachmentId ? [] : [{ op: 'updateScene' as const, sceneId: scene.id, fields: { thumbnailAttachmentId: attachmentId } }]),
-        ],
-        `Added image reference to "${scene.title}"`,
-      );
+      await engine.track(async () => {
+        const { asset } = await api.upload(episodeId, file, file.name);
+        engine.rememberAsset(asset.id, asset);
+        const label = file.name.replace(/\.[^.]+$/, '').slice(0, 80);
+        const attachmentId = randomId('at');
+        await engine.commitNow(
+          [
+            { op: 'addImage', sceneId: scene.id, id: attachmentId, assetId: asset.id, label },
+            // The first image becomes the card thumbnail unless one is already chosen.
+            ...(scene.thumbnailAttachmentId ? [] : [{ op: 'updateScene' as const, sceneId: scene.id, fields: { thumbnailAttachmentId: attachmentId } }]),
+          ],
+          `Added image reference to "${scene.title}"`,
+        );
+      });
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
