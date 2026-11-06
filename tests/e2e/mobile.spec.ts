@@ -129,3 +129,31 @@ test('phone: storyboard drawing by touch, image upload, reopen (acceptance 14)',
   const png = await page.request.get(`/api/assets/${sb.previewAssetId}`);
   expect(png.headers()['content-type']).toBe('image/png');
 });
+
+test('phone: navigate between Episodes, Settings and episode More menu, and sign out', async ({ page }) => {
+  await login(page);
+  const tabbar = page.locator('.tabbar');
+  await expect(tabbar.getByRole('link', { name: 'Episodes' })).toHaveAttribute('aria-current', 'page');
+  await expect(tabbar.getByRole('link', { name: 'Settings' })).toBeVisible();
+  await expect(tabbar.getByRole('button', { name: 'Sign out' })).toBeVisible();
+
+  // Navigate to Settings from the mobile tab bar on the Episodes page, then back to Episodes.
+  await tabbar.getByRole('link', { name: 'Settings' }).tap();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+  await expect(tabbar.getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
+  await tabbar.getByRole('link', { name: 'Episodes' }).tap();
+  await expect(page.getByRole('heading', { name: 'Episodes', level: 1 })).toBeVisible();
+
+  // Inside an episode, the More sheet also exposes Settings and Sign out.
+  await createEpisode(page, 'Phone nav episode');
+  await page.getByRole('button', { name: 'More' }).tap();
+  const more = page.getByRole('dialog', { name: 'More' });
+  await expect(more.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await more.getByRole('link', { name: 'Settings' }).tap();
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
+
+  // Sign out from the mobile tab bar returns to the login screen.
+  await tabbar.getByRole('button', { name: 'Sign out' }).tap();
+  await expect(page.getByRole('button', { name: 'Sign in' })).toBeVisible();
+});
+

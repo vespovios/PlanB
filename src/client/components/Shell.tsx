@@ -38,19 +38,20 @@ export function Shell(props: ShellProps) {
       {!mobile && <Rail {...props} />}
       {!mobile && props.switcher && wide && <EpisodeSwitcher activeId={props.activeEpisodeId} reloadKey={props.switcherKey} />}
       <div className="shell-main">{props.children}</div>
-      {mobile && props.episodeId && <MobileTabBar episodeId={props.episodeId} tab={props.tab} more={props.mobileMore} />}
+      {mobile && <MobileTabBar episodeId={props.episodeId} tab={props.tab} more={props.mobileMore} onSignOut={props.onSignOut} />}
     </div>
   );
 }
 
 function Rail({ user, onSignOut, episodeId, tab }: ShellProps) {
   const [menu, setMenu] = useState(false);
+  const onSettings = window.location.hash === '#/settings';
   return (
     <nav className="rail" aria-label="Main">
       <a className="rail-logo" href={href.episodes()} aria-label="PlanB episodes" title="All episodes">
         <img src="/brand/icon-192.png" alt="" width={40} height={40} />
       </a>
-      <a className={`rail-link ${!episodeId ? 'on' : ''}`} href={href.episodes()} title="All episodes" aria-label="All episodes">
+      <a className={`rail-link ${!episodeId && !onSettings ? 'on' : ''}`} href={href.episodes()} title="All episodes" aria-label="All episodes">
         <Icon name="film" />
       </a>
       {episodeId && (
@@ -71,7 +72,7 @@ function Rail({ user, onSignOut, episodeId, tab }: ShellProps) {
         </>
       )}
       <span className="rail-spacer" />
-      <a className="rail-link" href={href.settings()} title="Settings" aria-label="Settings">
+      <a className={`rail-link ${onSettings ? 'on' : ''}`} href={href.settings()} title="Settings" aria-label="Settings">
         <Icon name="gear" />
       </a>
       <div className="rail-user">
@@ -202,8 +203,27 @@ export function NewEpisodeModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function MobileTabBar({ episodeId, tab, more }: { episodeId: string; tab?: string; more?: ReactNode }) {
+function MobileTabBar({ episodeId, tab, more, onSignOut }: { episodeId?: string; tab?: string; more?: ReactNode; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
+  if (!episodeId) {
+    const onSettings = window.location.hash === '#/settings';
+    return (
+      <nav className="tabbar" aria-label="Main">
+        <a className={!onSettings ? 'on' : ''} href={href.episodes()} aria-current={!onSettings ? 'page' : undefined}>
+          <Icon name="film" size={22} />
+          <span>Episodes</span>
+        </a>
+        <a className={onSettings ? 'on' : ''} href={href.settings()} aria-current={onSettings ? 'page' : undefined}>
+          <Icon name="gear" size={22} />
+          <span>Settings</span>
+        </a>
+        <button type="button" onClick={onSignOut}>
+          <Icon name="logout" size={22} />
+          <span>Sign out</span>
+        </button>
+      </nav>
+    );
+  }
   const items = EPISODE_NAV.filter((n) => ['overview', 'plan', 'shots', 'storyboard'].includes(n.tab));
   return (
     <>
@@ -241,6 +261,16 @@ function MobileTabBar({ episodeId, tab, more }: { episodeId: string; tab?: strin
             <a className="btn ghost" href={href.settings()}>
               <Icon name="gear" /> Settings
             </a>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => {
+                setOpen(false);
+                onSignOut();
+              }}
+            >
+              <Icon name="logout" /> Sign out
+            </button>
           </div>
         </div>
       )}

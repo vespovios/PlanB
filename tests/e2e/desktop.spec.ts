@@ -382,6 +382,13 @@ test('episode overview, shot list tab and storyboard board', async ({ page }) =>
   await login(page);
   const id = await createEpisode(page, 'Tabs test');
   await page.goto(`/#/e/${id}`);
+  const statusPill = page.locator('.ep-cover-top .pill');
+  await expect(statusPill).toHaveClass(/amber/);
+  await expect(statusPill).toContainText('Draft');
+  await page.getByRole('radio', { name: 'Ready for filming' }).click();
+  await expect(statusPill).toHaveClass(/green/);
+  await expect(statusPill).toContainText('Ready for filming');
+  await waitSaved(page);
   await expect(page.locator('.kpi').first()).toContainText('02:45');
   await expect(page.locator('.running li')).toHaveCount(4);
   // Opening a scene from the running order lands on it in the Plan tab.

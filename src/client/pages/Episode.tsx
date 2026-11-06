@@ -123,7 +123,7 @@ export function EpisodePage({ id, tab, user, onSignOut }: { id: string; tab: Epi
         </div>
         <div className="ep-cover-over">
           <div className="ep-cover-top">
-            <span className="pill amber">
+            <span className={`pill ${episode.status === 'ready' ? 'green' : 'amber'}`}>
               <i />
               {episode.status === 'ready' ? 'Ready for filming' : 'Draft'} · revision {episode.revision}
             </span>
