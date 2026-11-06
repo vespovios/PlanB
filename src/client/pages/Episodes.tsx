@@ -4,6 +4,7 @@ import { api, assetUrl, type User } from '../api';
 import { Confirm } from '../components/ui';
 import { Icon, Ring } from '../components/Icon';
 import { NewEpisodeModal, Shell } from '../components/Shell';
+import { useOnReauthenticated } from '../session';
 import { href } from '../router';
 
 export function EpisodesPage({ user, onSignOut }: { user: User; onSignOut: () => void }) {
@@ -20,6 +21,10 @@ export function EpisodesPage({ user, onSignOut }: { user: User; onSignOut: () =>
   useEffect(() => {
     void load();
   }, []);
+  useOnReauthenticated(() => {
+    setError(null);
+    void load();
+  });
 
   return (
     <Shell user={user} onSignOut={onSignOut}>

@@ -277,14 +277,21 @@ export class EpisodeSync implements SaveParticipant {
     if (document.visibilityState === 'visible' && this.server) void this.refresh();
   };
 
+  /** Bumped per load, so an older load answering late cannot overwrite a newer one. */
+  private loadSeq = 0;
+
+  /** Loads the episode. While the session is gone it waits: resume() loads it after signing in again. */
   private async load() {
+    if (this.discarded || saves.isSuspended) return;
+    const seq = ++this.loadSeq;
     try {
       const { episode } = await api.episode(this.id);
-      if (this.discarded) return;
+      if (this.discarded || seq !== this.loadSeq) return;
       this.server = episode;
       this.state = 'saved';
       this.loadError = null;
     } catch (e) {
+      if (this.discarded || seq !== this.loadSeq) return;
       this.loadError = (e as Error).message;
     }
     this.emit();
@@ -792,6 +799,8 @@ export class EpisodeSync implements SaveParticipant {
   /** Writes were thawed: send what was held, and reconnect live updates (which catch up on open). */
   resume() {
     if (this.discarded) return;
+    // Not loaded yet (e.g. the first read was refused because the session had just ended): load now.
+    if (!this.stopped && !this.server) void this.load();
     if (!this.stopped && !this.events) this.connectEvents();
     if (this.queued.length && this.state !== 'error') this.schedule(0);
   }

@@ -1,8 +1,22 @@
 // Recovering from a lost session (expired, revoked elsewhere, password changed, or the browser
 // switched to another account) without losing the work on this page, and without ever sending it
 // for, or showing it to, a different account.
+import { useEffect, useRef } from 'react';
 import { api, setSessionUser, type User } from './api';
 import { saves as defaultCoordinator, type SaveCoordinator, type SaveReport } from './saves';
+
+export const REAUTHENTICATED = 'planb:reauthenticated';
+
+/** Runs `fn` after the same account signed in again (to redo a read refused while signed out). */
+export function useOnReauthenticated(fn: () => void) {
+  const latest = useRef(fn);
+  latest.current = fn;
+  useEffect(() => {
+    const run = () => latest.current();
+    window.addEventListener(REAUTHENTICATED, run);
+    return () => window.removeEventListener(REAUTHENTICATED, run);
+  }, []);
+}
 
 export type RecoveryPhase =
   | { step: 'active' }
@@ -68,6 +82,8 @@ export class SessionRecovery {
     setSessionUser(user.id);
     this.set({ step: 'active' });
     this.c.reauthenticated();
+    // Pages with their own reads (episode list, settings) load again.
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(REAUTHENTICATED));
     return null;
   };
 

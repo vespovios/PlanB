@@ -4,6 +4,7 @@ import { GEAR_KINDS, type Episode, type EpisodeSummary, type GearItem } from '..
 import { api } from '../api';
 import type { EpisodeSync } from '../sync';
 import { useUnsavedDraft } from '../saves';
+import { useOnReauthenticated } from '../session';
 import { TextField } from '../components/ui';
 
 export const GEAR_KIND_LABELS: Record<GearItem['kind'], string> = {
@@ -26,12 +27,15 @@ export function KitList({ episode, engine, onShowShots }: { episode: Episode; en
   const [others, setOthers] = useState<EpisodeSummary[]>([]);
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadOthers = () =>
     api
       .episodes()
       .then((r) => setOthers(r.episodes.filter((e) => e.id !== episode.id)))
       .catch(() => undefined);
+  useEffect(() => {
+    void loadOthers();
   }, [episode.id]);
+  useOnReauthenticated(() => void loadOthers());
 
   const usage = (id: string) => episode.scenes.reduce((n, s) => n + s.shots.filter((sh) => sh.gear?.includes(id)).length, 0);
 

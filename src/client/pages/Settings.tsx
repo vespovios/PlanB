@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type AgentToken, type User } from '../api';
 import { Shell } from '../components/Shell';
+import { useOnReauthenticated } from '../session';
 
 export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [tokens, setTokens] = useState<AgentToken[]>([]);
@@ -22,6 +23,10 @@ export function SettingsPage({ user, onSignOut }: { user: User; onSignOut: () =>
   useEffect(() => {
     void load();
   }, []);
+  useOnReauthenticated(() => {
+    setError(null);
+    void load();
+  });
   const mcpUrl = urls.mcpUrl || `${location.origin}/mcp`;
 
   return (

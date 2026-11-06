@@ -3,6 +3,7 @@ import type { RevisionInfo } from '../../shared/model';
 import { api, ApiError } from '../api';
 import type { EpisodeSync } from '../sync';
 import { Confirm, Modal } from '../components/ui';
+import { useOnReauthenticated } from '../session';
 
 type Reverted = { revision: number; authorLabel: string; summary: string }[];
 
@@ -22,6 +23,10 @@ export function HistoryDialog({ episodeId, engine, onClose, onRestored }: { epis
   useEffect(() => {
     void load();
   }, []);
+  useOnReauthenticated(() => {
+    setError(null);
+    void load();
+  });
 
   const restore = async (target: number, acknowledgedBase?: number) => {
     setError(null);

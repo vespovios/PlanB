@@ -755,3 +755,49 @@ describe('session lost and regained', () => {
     expect(current.title).toBe('agent');
   });
 });
+
+describe('first load refused because the session had just ended', () => {
+  it('loads after the same account signs in again, and clears the error', async () => {
+    let calls = 0;
+    server.episode = async () => {
+      calls++;
+      throw new ApiError(401, 'Please sign in.');
+    };
+    const e = new EpisodeSync(ID);
+    engines.push(e);
+    e.start();
+    await vi.waitFor(() => expect(e.getSnapshot().loadError).toBe('Please sign in.'));
+    saves.suspendForAuth();
+    server.episode = async () => {
+      calls++;
+      return { episode: current };
+    };
+    saves.reauthenticated();
+    await vi.waitFor(() => expect(e.getSnapshot().episode?.title).toBe('Start'));
+    expect(e.getSnapshot().loadError).toBeNull();
+    expect(calls).toBe(2);
+  });
+
+  it('does not load while signed out, and an older load answering late is ignored', async () => {
+    saves.suspendForAuth();
+    let calls = 0;
+    const slow = deferred<{ episode: Episode }>();
+    server.episode = () => {
+      calls++;
+      return calls === 1 ? slow.promise : Promise.resolve({ episode: { ...current, title: 'newer' } });
+    };
+    const e = new EpisodeSync(ID);
+    engines.push(e);
+    e.start();
+    await tick();
+    expect(calls).toBe(0);
+    saves.thaw('auth'); // resume → first load (slow)
+    await tick();
+    saves.freeze('x');
+    saves.thaw('x'); // resume again → second load answers first
+    await vi.waitFor(() => expect(e.getSnapshot().episode?.title).toBe('newer'));
+    slow.resolve({ episode: { ...current, title: 'older' } });
+    await tick();
+    expect(e.getSnapshot().episode?.title).toBe('newer');
+  });
+});
